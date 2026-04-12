@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "327088604055",
+    "project_id": "ucak-bileti-rezervasyon",
+    "storage_bucket": "ucak-bileti-rezervasyon.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:327088604055:android:310660ba5493031c3f3ad2",
+        "android_client_info": {
+          "package_name": "com.example.u_203311057_ibrahimfurkangulcan_flutter_preject"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGBukjLQESgV3DXgNxnBak0ze_qczGTPU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
