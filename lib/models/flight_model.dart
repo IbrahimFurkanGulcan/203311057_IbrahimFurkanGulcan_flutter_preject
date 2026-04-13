@@ -29,28 +29,5 @@ class FlightModel {
     return FlightModel(
       id: documentId,
       flightNumber: map['flightNumber'] ?? '',
-      origin: map['origin'] ?? '',
-      destination: map['destination'] ?? '',
-      date: (map['date'] as Timestamp).toDate(),
-      price: (map['price'] ?? 0.0).toDouble(),
-      totalSeats: map['totalSeats'] ?? 0,
-      availableSeats: map['availableSeats'] ?? 0,
-      status: map['status'] ?? 'scheduled',
-      gate: map['gate'],
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'flightNumber': flightNumber,
-      'origin': origin,
-      'destination': destination,
-      'date': Timestamp.fromDate(date),
-      'price': price,
-      'totalSeats': totalSeats,
-      'availableSeats': availableSeats,
-      'status': status,
-      'gate': gate,
-    };
-  }
-}
+      
+      

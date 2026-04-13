@@ -8,7 +8,8 @@ class TicketModel {
   final String contactEmail; // İletişim E-postası
   final String contactPhone; // İletişim Telefonu
   final String seatClass; // economy, business
-  final String status; 
+  final String status;
+  final String passengerSex; 
   final String? seatNumber; 
 
   TicketModel({
@@ -20,6 +21,7 @@ class TicketModel {
     required this.passengerTcNo,
     required this.contactEmail,
     required this.contactPhone,
+    required this.passengerSex,
     this.seatClass = 'economy',
     this.status = 'booked',
     this.seatNumber,
@@ -35,6 +37,7 @@ class TicketModel {
       passengerTcNo: map['passengerTcNo'] ?? '',
       contactEmail: map['contactEmail'] ?? '',
       contactPhone: map['contactPhone'] ?? '',
+      passengerSex: map['passengerSex'] ?? '',
       seatClass: map['seatClass'] ?? 'economy',
       status: map['status'] ?? 'booked',
       seatNumber: map['seatNumber'],
@@ -50,6 +53,7 @@ class TicketModel {
       'passengerTcNo': passengerTcNo,
       'contactEmail': contactEmail,
       'contactPhone': contactPhone,
+      'passengerSex': passengerSex,
       'seatClass': seatClass,
       'status': status,
       'seatNumber': seatNumber,

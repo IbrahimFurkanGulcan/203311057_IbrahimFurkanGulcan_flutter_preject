@@ -23,7 +23,7 @@ class UserModel {
       firstName: map['firstName'] ?? '',
       lastName: map['lastName'] ?? '',
       role: map['role'] ?? 'passenger',
-      phoneNumber: map['phoneNumber'],
+      phoneNumber: map['phoneNumber'] ?? '',
     );
   }
 
