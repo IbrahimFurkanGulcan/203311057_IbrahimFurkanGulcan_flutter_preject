@@ -4,6 +4,8 @@ import '../../models/flight_model.dart';
 import '../../models/ticket_model.dart';
 import '../../services/flight_service.dart';
 import '../../services/ticket_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../models/user_model.dart';
 
 class SearchFlightScreen extends StatefulWidget {
   const SearchFlightScreen({super.key});
@@ -19,6 +21,8 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
   DateTime _selectedDate = DateTime.now();
   int _passengerCount = 1;
 
+  UserModel? _userProfile;
+
   // Havalimanı Listesi (Test verilerimizdeki lokasyonlar)
   final List<String> _airports = [
     'İstanbul',
@@ -31,8 +35,29 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
     'Dubai',
   ];
 
+  final GlobalKey<FormState> _modalFormKey = GlobalKey<FormState>();
+
   bool _isSearching = false;
   List<FlightModel> _searchResults = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile(); // Sayfa açılırken profili yükle
+  }
+
+  // Giriş yapan kişinin verilerini bir kez çekip hafızaya alıyoruz
+  Future<void> _loadUserProfile() async {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      DocumentSnapshot doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _userProfile = UserModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        });
+      }
+    }
+  }
 
   // Tarih Seçici
   Future<void> _pickDate() async {
@@ -70,93 +95,205 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
     });
   }
 
-  // Ödeme ve Biletleme Penceresi (BottomSheet)
+  // Ödeme ve Dinamik Yolcu Bilgileri Penceresi (BottomSheet)
   void _showBookingModal(FlightModel flight) {
-    double totalPrice = flight.price * _passengerCount;
+    double basePrice = flight.price;
     bool isProcessing = false;
+
+    // Her yolcu için ayrı form kontrolcüleri ve durum değişkenleri oluşturuyoruz
+    
+    List<TextEditingController> nameControllers = List.generate(_passengerCount, (i) {
+      String initialName = (i == 0 && _userProfile != null) ? _userProfile!.fullName : "";
+      return TextEditingController(text: initialName);
+    });
+
+    List<TextEditingController> phoneControllers = List.generate(_passengerCount, (i) {
+      String initialPhone = (i == 0 && _userProfile != null) ? (_userProfile!.phoneNumber ?? "") : "";
+      return TextEditingController(text: initialPhone);
+    });
+
+    List<TextEditingController> tcControllers = List.generate(_passengerCount, (i) => TextEditingController());
+    List<String> seatClasses = List.generate(_passengerCount, (i) => 'economy');
+    List<String> passengerSexes = List.generate(_passengerCount, (i) => 'Belirtilmedi');
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true, // Ekranı tam kaplayabilmesi için
+      backgroundColor: Colors.transparent, // Arka planı şeffaf yapıp kendimiz şekillendireceğiz
       builder: (context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
-            return Padding(
+            
+            // Toplam fiyatı, seçilen koltuk sınıflarına göre dinamik hesaplayan fonksiyon
+            double calculateTotalPrice() {
+              double total = 0;
+              for (String seatClass in seatClasses) {
+                total += seatClass == 'business' ? basePrice * 2.5 : basePrice; // Business 2.5 katı
+              }
+              return total;
+            }
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.90, // Ekranın %90'ını kaplasın (klavye için alan)
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+                bottom: MediaQuery.of(context).viewInsets.bottom, // Klavye açılınca ekranı yukarı iter
                 left: 20, right: 20, top: 20,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Uçuş Özeti ve Ödeme', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                  const Divider(),
-                  Text('Uçuş: ${flight.flightNumber} (${flight.origin} -> ${flight.destination})', style: const TextStyle(fontSize: 16)),
-                  Text('Tarih: ${flight.date.day}/${flight.date.month}/${flight.date.year}', style: const TextStyle(fontSize: 16)),
-                  Text('Yolcu Sayısı: $_passengerCount Kişi', style: const TextStyle(fontSize: 16)),
-                  const SizedBox(height: 10),
-                  Text('Ödenecek Toplam Tutar: $totalPrice TL', style: const TextStyle(fontSize: 20, color: Colors.blue, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 20),
-                  isProcessing
-                      ? const Center(child: CircularProgressIndicator())
-                      : ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size(double.infinity, 50),
-                            backgroundColor: Colors.green,
-                          ),
-                          onPressed: () async {
-                            setModalState(() { isProcessing = true; });
+              child: Form(
+                key: _modalFormKey,
+                child: Column(
+                  children: [
+                    Text('${flight.origin} ➔ ${flight.destination} | Uçuş: ${flight.flightNumber}',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Divider(),
+                    
+                    // YOLCU BİLGİ FORMLARI LİSTESİ (Kişi sayısı kadar döner)
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _passengerCount,
+                        itemBuilder: (context, index) {
+                          return Card(
+                            elevation: 2,
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${index + 1}. Yolcu Bilgileri', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: nameControllers[index],
+                                    decoration: const InputDecoration(labelText: 'Ad Soyad', isDense: true, border: OutlineInputBorder()),
+                                    validator: (v) => v!.isEmpty ? 'Zorunlu' : null,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: tcControllers[index],
+                                    keyboardType: TextInputType.number,
+                                    maxLength: 11,
+                                    decoration: const InputDecoration(labelText: 'TC Kimlik No', isDense: true, border: OutlineInputBorder(), counterText: ""),
+                                    validator: (v) => v!.length != 11 ? '11 Haneli Olmalı' : null,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: phoneControllers[index],
+                                    keyboardType: TextInputType.phone,
+                                    decoration: const InputDecoration(labelText: 'Telefon No', isDense: true, border: OutlineInputBorder()),
+                                    validator: (v) => v!.isEmpty ? 'Zorunlu' : null,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: DropdownButtonFormField<String>(
+                                          initialValue: passengerSexes[index],
+                                          decoration: const InputDecoration(labelText: 'Cinsiyet', isDense: true, border: OutlineInputBorder()),
+                                          items: ['Belirtilmedi', 'Erkek', 'Kadın'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                                          onChanged: (val) => setModalState(() => passengerSexes[index] = val!),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: DropdownButtonFormField<String>(
+                                          initialValue: seatClasses[index],
+                                          decoration: const InputDecoration(labelText: 'Koltuk Sınıfı', isDense: true, border: OutlineInputBorder()),
+                                          items: const [
+                                            DropdownMenuItem(value: 'economy', child: Text('Economy')),
+                                            DropdownMenuItem(value: 'business', child: Text('Business')),
+                                          ],
+                                          onChanged: (val) {
+                                            // Seçim değiştiğinde toplam fiyatın da değişmesi için setModalState yapıyoruz
+                                            setModalState(() { seatClasses[index] = val!; });
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    
+                    // ALT KISIM: TOPLAM FİYAT VE ÖDEME BUTONU
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Column(
+                        children: [
+                          Text('Ödenecek Toplam Tutar: ${calculateTotalPrice()} TL', 
+                              style: const TextStyle(fontSize: 20, color: Colors.blue, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 10),
+                          isProcessing
+                              ? const CircularProgressIndicator()
+                              : ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    minimumSize: const Size(double.infinity, 50),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                  onPressed: () async {
+                                    // Eğer formda boş yer varsa veya TC 11 hane değilse durdur
+                                    if (!_modalFormKey.currentState!.validate()) return;
+                                    
+                                    setModalState(() { isProcessing = true; });
 
-                            // 1. Kullanıcıyı getir
-                            User? currentUser = FirebaseAuth.instance.currentUser;
-                            if (currentUser == null) return;
+                                    User? currentUser = FirebaseAuth.instance.currentUser;
+                                    if (currentUser == null) return;
 
-                            // 2. Bilet modellerini hazırla (Kaç kişiyse o kadar bilet)
-                            List<TicketModel> newTickets = [];
-                            for (int i = 0; i < _passengerCount; i++) {
-                              newTickets.add(TicketModel(
-                                id: '', pnrCode: '', // Servis dolduracak
-                                userId: currentUser.uid,
-                                flightId: flight.id,
-                                passengerName: 'Yolcu ${i + 1}', // Gerçek projede formdan alınır
-                                passengerTcNo: '11111111111', 
-                                contactEmail: currentUser.email ?? '',
-                                contactPhone: '05000000000',
-                                passengerSex: 'Belirtilmedi',
-                              ));
-                            }
+                                    List<TicketModel> newTickets = [];
+                                    // Formdan gelen gerçek verileri Modellere aktarıyoruz
+                                    for (int i = 0; i < _passengerCount; i++) {
+                                      newTickets.add(TicketModel(
+                                        id: '', pnrCode: '', 
+                                        userId: currentUser.uid,
+                                        flightId: flight.id,
+                                        passengerName: nameControllers[i].text.trim().toUpperCase(),
+                                        passengerTcNo: tcControllers[i].text.trim(), 
+                                        contactEmail: currentUser.email ?? '', // Bileti alan kişinin maili eklendi
+                                        contactPhone: phoneControllers[i].text.trim(),
+                                        passengerSex: passengerSexes[i],
+                                        seatClass: seatClasses[i],
+                                      ));
+                                    }
 
-                            // 3. Transaction'ı (Satın Almayı) Başlat!
-                            String result = await TicketService().buyTickets(
-                              userId: currentUser.uid,
-                              flightId: flight.id,
-                              tickets: newTickets,
-                              totalPrice: totalPrice,
-                            );
+                                    // Transaction işlemi
+                                    String result = await TicketService().buyTickets(
+                                      userId: currentUser.uid,
+                                      flightId: flight.id,
+                                      tickets: newTickets,
+                                      totalPrice: calculateTotalPrice(),
+                                    );
 
-                            setModalState(() { isProcessing = false; });
+                                    setModalState(() { isProcessing = false; });
 
-                            if (!context.mounted) return;
-                            Navigator.pop(context); // Modalı kapat
+                                    if (!context.mounted) return;
+                                    Navigator.pop(context); // Paneli kapat
 
-                            if (result == "success") {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Biletiniz başarıyla alındı! 🎉'), backgroundColor: Colors.green),
-                              );
-                              // Uçuşları yenile (kapasite düştüğünü görmek için)
-                              _searchFlights();
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Hata: $result'), backgroundColor: Colors.red),
-                              );
-                            }
-                          },
-                          child: const Text('Cüzdan ile Öde ve Bileti Kes', style: TextStyle(fontSize: 18, color: Colors.white)),
-                        ),
-                  const SizedBox(height: 20),
-                ],
+                                    if (result == "success") {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Biletler başarıyla alındı! 🎉'), backgroundColor: Colors.green),
+                                      );
+                                      // Arka plandaki uçuş listesini kapasite değiştiği için yenile
+                                      _searchFlights(isFlexible: true); 
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Hata: $result'), backgroundColor: Colors.red),
+                                      );
+                                    }
+                                  },
+                                  child: const Text('Cüzdan ile Öde ve Bileti Kes', style: TextStyle(fontSize: 18, color: Colors.white)),
+                                ),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
               ),
             );
           },
@@ -253,12 +390,18 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                       itemCount: _searchResults.length,
                       itemBuilder: (context, index) {
                         FlightModel flight = _searchResults[index];
+                        
+                        // Koltuk sayısına göre dinamik uyarı yazısı
+                        Widget seatInfo = flight.availableSeats <= 10
+                            ? Text('🔥 Son ${flight.availableSeats} Koltuk!', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))
+                            : Text('Boş Koltuk: ${flight.availableSeats}', style: const TextStyle(color: Colors.grey));
+
                         return Card(
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           child: ListTile(
                             leading: const Icon(Icons.flight, color: Colors.blue, size: 40),
-                            title: Text('${flight.flightNumber} | ${flight.date.hour}:${flight.date.minute.toString().padLeft(2, '0')}'),
-                            subtitle: Text('Boş Koltuk: ${flight.availableSeats}'),
+                            title: Text('${flight.flightNumber} | ${flight.date.hour.toString().padLeft(2, '0')}:${flight.date.minute.toString().padLeft(2, '0')}'),
+                            subtitle: seatInfo, 
                             trailing: Text('${flight.price} TL', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
                             onTap: () => _showBookingModal(flight),
                           ),
