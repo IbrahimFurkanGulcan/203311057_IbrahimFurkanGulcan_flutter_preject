@@ -5,6 +5,7 @@ class UserModel {
   final String lastName;         
   final String? phoneNumber;
   final String role; // "admin" veya "passenger"
+  final double walletBalance;
 
   UserModel({
     required this.uid,
@@ -13,6 +14,7 @@ class UserModel {
     required this.lastName,
     this.phoneNumber,
     this.role = 'passenger', // Varsayılan olarak herkes yolcu kaydedilir
+    this.walletBalance = 10000.0,
   });
 
   // Firebase'den gelen veriyi Dart nesnesine çevirir
@@ -23,7 +25,8 @@ class UserModel {
       firstName: map['firstName'] ?? '',
       lastName: map['lastName'] ?? '',
       role: map['role'] ?? 'passenger',
-      phoneNumber: map['phoneNumber'] ?? '',
+      phoneNumber: map['phoneNumber'] ?? '',      
+      walletBalance: (map['walletBalance'] ?? 10000.0).toDouble(),
     );
   }
 
@@ -35,6 +38,8 @@ class UserModel {
       'lastName': lastName,
       'role': role,
       'phoneNumber': phoneNumber,
+      'walletBalance': walletBalance,
+      
     };
   }
 
