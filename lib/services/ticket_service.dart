@@ -7,79 +7,83 @@ import 'dart:math';
 class TicketService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Güvenli Satın Alma İşlemi (Transaction)
+  /// Güvenli Satın Alma İşlemi (Transaction) - GİDİŞ/DÖNÜŞ DESTEKLİ (Düzeltilmiş Versiyon)
   Future<String> buyTickets({
     required String userId,
-    required String flightId,
-    required List<TicketModel> tickets, // Kaç kişi uçuyorsa o kadar bilet
-    required double totalPrice,
+    required List<TicketModel> tickets, 
+    required double totalPrice, required String flightId,
   }) async {
     try {
       DocumentReference userRef = _firestore.collection('users').doc(userId);
-      DocumentReference flightRef = _firestore.collection('flights').doc(flightId);
 
-      // runTransaction: Tüm işlemler hatasız biterse veritabanına yazar, biri patlarsa hepsini geri alır (Rollback)
+      // Biletlerdeki farklı uçuşları ve kaç koltuk istendiğini tespit et
+      Map<String, int> flightSeatCounts = {};
+      for (var t in tickets) {
+        flightSeatCounts[t.flightId] = (flightSeatCounts[t.flightId] ?? 0) + 1;
+      }
+
       await _firestore.runTransaction((transaction) async {
-        // 1. Oku: Uçuş ve Kullanıcı verilerini anlık olarak oku
+        // =======================================================
+        // 1. AŞAMA: SADECE OKUMA (READ) İŞLEMLERİ 
+        // (Firebase kuralı: Tüm okumalar yazmalardan önce yapılmalıdır)
+        // =======================================================
+        
         DocumentSnapshot userSnapshot = await transaction.get(userRef);
-        DocumentSnapshot flightSnapshot = await transaction.get(flightRef);
-
-        if (!userSnapshot.exists || !flightSnapshot.exists) {
-          throw Exception("Kullanıcı veya uçuş bulunamadı.");
-        }
-
+        if (!userSnapshot.exists) throw Exception("Kullanıcı bulunamadı.");
         double currentBalance = (userSnapshot.data() as Map<String, dynamic>)['walletBalance'] ?? 0.0;
-        int availableSeats = (flightSnapshot.data() as Map<String, dynamic>)['availableSeats'] ?? 0;
 
-        // 2. Kontrol Et: Para ve Koltuk yetiyor mu?
-        if (currentBalance < totalPrice) {
-          throw Exception("Cüzdan bakiyeniz yetersiz.");
-        }
-        if (availableSeats < tickets.length) {
-          throw Exception("Üzgünüz, uçakta yeterli boş koltuk kalmadı.");
+        if (currentBalance < totalPrice) throw Exception("Cüzdan bakiyeniz yetersiz.");
+
+        // İlgili tüm uçuşların mevcut kapasitelerini okuyup hafızaya (Map) alalım
+        Map<String, int> availableSeatsMap = {};
+        Map<String, DocumentReference> flightRefs = {};
+
+        for (String fId in flightSeatCounts.keys) {
+          DocumentReference flightRef = _firestore.collection('flights').doc(fId);
+          DocumentSnapshot flightSnap = await transaction.get(flightRef);
+          
+          if (!flightSnap.exists) throw Exception("Uçuşlardan biri bulunamadı.");
+          int availableSeats = (flightSnap.data() as Map<String, dynamic>)['availableSeats'] ?? 0;
+          int requestedSeats = flightSeatCounts[fId]!;
+
+          if (availableSeats < requestedSeats) throw Exception("Üzgünüz, uçuşların birinde yeterli koltuk kalmadı.");
+          
+          availableSeatsMap[fId] = availableSeats; // Koltuk sayısını kaydet
+          flightRefs[fId] = flightRef;             // Referansı kaydet
         }
 
-        // 3. Yaz: Parayı düş, koltuğu azalt
+        // =======================================================
+        // 2. AŞAMA: SADECE YAZMA (WRITE) İŞLEMLERİ
+        // =======================================================
+        
+        // 1. Parayı düş
         transaction.update(userRef, {'walletBalance': currentBalance - totalPrice});
-        transaction.update(flightRef, {'availableSeats': availableSeats - tickets.length});
 
-        // 4. Yaz: Biletleri ve Log kaydını oluştur
+        // 2. Uçuş kapasitelerini düş
+        for (String fId in flightSeatCounts.keys) {
+          transaction.update(flightRefs[fId]!, {
+            'availableSeats': availableSeatsMap[fId]! - flightSeatCounts[fId]!
+          });
+        }
+
+        // 3. Biletleri veritabanına ekle
         for (var ticket in tickets) {
           DocumentReference newTicketRef = _firestore.collection('tickets').doc();
-          
-          // Rastgele PNR kodu üret
-          String pnr = _generatePNR();
-          
           TicketModel ticketWithId = TicketModel(
-            id: newTicketRef.id,
-            pnrCode: pnr,
-            userId: ticket.userId,
-            flightId: ticket.flightId,
-            passengerName: ticket.passengerName,
-            passengerTcNo: ticket.passengerTcNo,
-            contactEmail: ticket.contactEmail,
-            contactPhone: ticket.contactPhone,
-            passengerSex: ticket.passengerSex,
-            seatClass: ticket.seatClass,
-            status: 'booked',
-            createdAt: DateTime.now(), 
-            date: ticket.date,
-            flightNumber: ticket.flightNumber,
-            origin: ticket.origin,
-            destination: ticket.destination,
-            arrivalTime: ticket.arrivalTime,
-            terminal: ticket.terminal,
+            id: newTicketRef.id, pnrCode: _generatePNR(), userId: ticket.userId,
+            flightId: ticket.flightId, passengerName: ticket.passengerName, passengerTcNo: ticket.passengerTcNo,
+            contactEmail: ticket.contactEmail, contactPhone: ticket.contactPhone, passengerSex: ticket.passengerSex,
+            seatClass: ticket.seatClass, status: 'booked', createdAt: DateTime.now(), date: ticket.date,
+            flightNumber: ticket.flightNumber, origin: ticket.origin, destination: ticket.destination,
+            arrivalTime: ticket.arrivalTime, terminal: ticket.terminal,
           );
-
           transaction.set(newTicketRef, ticketWithId.toMap());
         }
 
-        // Hocanın istediği log kaydı
+        // 4. Log Kaydı
         DocumentReference logRef = _firestore.collection('logs').doc();
         transaction.set(logRef, {
-          'userId': userId,
-          'action': '${tickets.length} adet bilet satın alındı. Uçuş: $flightId',
-          'timestamp': FieldValue.serverTimestamp(),
+          'userId': userId, 'action': '${tickets.length} adet bilet alındı. Tutar: $totalPrice', 'timestamp': FieldValue.serverTimestamp(),
         });
       });
 

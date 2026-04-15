@@ -20,6 +20,9 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
   String _selectedDestination = 'Ankara';
   DateTime _selectedDate = DateTime.now();
   int _passengerCount = 1;
+  bool _isRoundTrip = false; // Çift yön mü?
+  DateTime? _returnDate;     // Dönüş tarihi
+  FlightModel? _selectedOutboundFlight; // Seçilen ilk uçuş (Sepet)
 
   UserModel? _userProfile;
 
@@ -102,12 +105,19 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
   }
 
   // Ödeme ve Dinamik Yolcu Bilgileri Penceresi (BottomSheet)
-  void _showBookingModal(FlightModel flight) {
-    double basePrice = flight.price;
+  // Ödeme ve Dinamik Yolcu Bilgileri Penceresi (BottomSheet) - GİDİŞ/DÖNÜŞ DESTEKLİ
+  void _showBookingModal(FlightModel currentFlight) {
+    // Eğer Gidiş-Dönüş seçildiyse; elimizde bir ilk uçuş (outbound) ve şu an tıklanan uçuş (return) var demektir.
+    FlightModel? outboundFlight = _selectedOutboundFlight;
+    bool isRoundTripBooking = _isRoundTrip && outboundFlight != null;
+
+    // Fiyat hesaplaması: Tek yönse tek fiyat, çift yönse iki uçuşun toplam baz fiyatı
+    double basePrice = isRoundTripBooking 
+        ? outboundFlight.price + currentFlight.price 
+        : currentFlight.price;
+        
     bool isProcessing = false;
 
-    // Her yolcu için ayrı form kontrolcüleri ve durum değişkenleri oluşturuyoruz
-    
     List<TextEditingController> nameControllers = List.generate(_passengerCount, (i) {
       String initialName = (i == 0 && _userProfile != null) ? _userProfile!.fullName : "";
       return TextEditingController(text: initialName);
@@ -130,8 +140,6 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
             
-            // OPTIMIZATION: Calculate total price here, but ideally, this logic should be a class method 
-            // if it gets more complex. For now, it's okay inside StatefulBuilder but keep it lean.
             double calculateTotalPrice() {
               double total = 0;
               for (String seatClass in seatClasses) {
@@ -141,24 +149,34 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
             }
 
             return Container(
-              height: MediaQuery.of(context).size.height * 0.90, // Ekranın %90'ını kaplasın (klavye için alan)
+              height: MediaQuery.of(context).size.height * 0.90,
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom, // Klavye açılınca ekranı yukarı iter
+                bottom: MediaQuery.of(context).viewInsets.bottom,
                 left: 20, right: 20, top: 20,
               ),
               child: Form(
                 key: _modalFormKey,
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${flight.origin} ➔ ${flight.destination} | Uçuş: ${flight.flightNumber}',
+                    // BAŞLIK BÖLÜMÜ (Tek mi Çift Yön mü?)
+                    if (isRoundTripBooking) ...[
+                      const Text('✈️ GİDİŞ:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                      Text('${outboundFlight.origin} ➔ ${outboundFlight.destination} | Uçuş: ${outboundFlight.flightNumber}', style: const TextStyle(fontSize: 16)),
+                      const SizedBox(height: 5),
+                      const Text('🛬 DÖNÜŞ:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                      Text('${currentFlight.origin} ➔ ${currentFlight.destination} | Uçuş: ${currentFlight.flightNumber}', style: const TextStyle(fontSize: 16)),
+                    ] else ...[
+                      Text('${currentFlight.origin} ➔ ${currentFlight.destination} | Uçuş: ${currentFlight.flightNumber}',
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ],
                     const Divider(),
                     
-                    // YOLCU BİLGİ FORMLARI LİSTESİ (Kişi sayısı kadar döner)
+                    // YOLCU BİLGİ FORMLARI LİSTESİ
                     Expanded(
                       child: ListView.builder(
                         itemCount: _passengerCount,
@@ -214,7 +232,6 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                             DropdownMenuItem(value: 'business', child: Text('Business')),
                                           ],
                                           onChanged: (val) {
-                                            // Seçim değiştiğinde toplam fiyatın da değişmesi için setModalState yapıyoruz
                                             setModalState(() { seatClasses[index] = val!; });
                                           },
                                         ),
@@ -245,43 +262,43 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                     backgroundColor: Colors.green,
                                   ),
                                   onPressed: () async {
-                                    // Eğer formda boş yer varsa veya TC 11 hane değilse durdur
                                     if (!_modalFormKey.currentState!.validate()) return;
-                                    
                                     setModalState(() { isProcessing = true; });
 
                                     User? currentUser = FirebaseAuth.instance.currentUser;
                                     if (currentUser == null) return;
 
                                     List<TicketModel> newTickets = [];
-                                    // Formdan gelen gerçek verileri Modellere aktarıyoruz
-                                    for (int i = 0; i < _passengerCount; i++) {
+                                    
+                                    // Yardımcı fonksiyon: Bilet modelini oluşturur
+                                    void addTicketToList(FlightModel flight, int index) {
                                       newTickets.add(TicketModel(
-                                        id: '', pnrCode: '', 
-                                        userId: currentUser.uid,
-                                        flightId: flight.id,
-                                        passengerName: nameControllers[i].text.trim().toUpperCase(),
-                                        passengerTcNo: tcControllers[i].text.trim(), 
-                                        contactEmail: currentUser.email ?? '', // Bileti alan kişinin maili eklendi
-                                        contactPhone: phoneControllers[i].text.trim(),
-                                        passengerSex: passengerSexes[i],
-                                        seatClass: seatClasses[i], 
-                                        createdAt: DateTime.now(), // Satın alma anı (Şu an)
-                                        date: flight.date,
-                                        flightNumber: flight.flightNumber,
-                                        origin: flight.origin,
-                                        destination: flight.destination,
-                                        arrivalTime: flight.arrivalTime,
-                                        terminal: flight.terminal ?? 'Belirtilmedi',
+                                        id: '', pnrCode: '', userId: currentUser.uid, flightId: flight.id,
+                                        passengerName: nameControllers[index].text.trim().toUpperCase(),
+                                        passengerTcNo: tcControllers[index].text.trim(), 
+                                        contactEmail: currentUser.email ?? '', contactPhone: phoneControllers[index].text.trim(),
+                                        passengerSex: passengerSexes[index], seatClass: seatClasses[index], 
+                                        createdAt: DateTime.now(), date: flight.date, flightNumber: flight.flightNumber,
+                                        origin: flight.origin, destination: flight.destination,
+                                        arrivalTime: flight.arrivalTime, terminal: flight.terminal ?? 'Belirtilmedi',
                                       ));
                                     }
 
-                                    // Transaction işlemi
+                                    // Her yolcu için biletleri oluştur (Gidiş-Dönüş ise her yolcuya 2 bilet kesilir)
+                                    for (int i = 0; i < _passengerCount; i++) {
+                                      if (isRoundTripBooking) {
+                                        addTicketToList(outboundFlight, i); // Gidiş bileti
+                                        addTicketToList(currentFlight, i);   // Dönüş bileti
+                                      } else {
+                                        addTicketToList(currentFlight, i);   // Sadece tek yön bileti
+                                      }
+                                    }
+
+                                    // Yeni Transaction sistemine biletleri gönder
                                     String result = await TicketService().buyTickets(
                                       userId: currentUser.uid,
-                                      flightId: flight.id,
                                       tickets: newTickets,
-                                      totalPrice: calculateTotalPrice(),
+                                      totalPrice: calculateTotalPrice(), flightId: '',
                                     );
 
                                     setModalState(() { isProcessing = false; });
@@ -293,7 +310,8 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         const SnackBar(content: Text('Biletler başarıyla alındı! 🎉'), backgroundColor: Colors.green),
                                       );
-                                      // Arka plandaki uçuş listesini kapasite değiştiği için yenile
+                                      // İşlem bittiğinde sepeti sıfırla ve listeyi yenile
+                                      setState(() { _selectedOutboundFlight = null; });
                                       _searchFlights(isFlexible: true); 
                                     } else {
                                       ScaffoldMessenger.of(context).showSnackBar(
@@ -350,20 +368,55 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                 ],
               ),
               const SizedBox(height: 10),
+              // YENİ: Tek Yön / Gidiş-Dönüş Switch'i
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  RadioMenuButton<bool>(
+                    value: false,
+                    groupValue: _isRoundTrip,
+                    onChanged: (val) => setState(() { _isRoundTrip = val!; _returnDate = null; }),
+                    child: const Text("Tek Yön"),
+                  ),
+                  const SizedBox(width: 20),
+                  RadioMenuButton<bool>(
+                    value: true,
+                    groupValue: _isRoundTrip,
+                    onChanged: (val) => setState(() { _isRoundTrip = val!; _returnDate = DateTime.now().add(const Duration(days: 1)); }),
+                    child: const Text("Gidiş-Dönüş"),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // TARİH VE KİŞİ SEÇİMİ
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: _pickDate,
-                      icon: const Icon(Icons.calendar_today),
+                      icon: const Icon(Icons.flight_takeoff),
                       label: Text('${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}'),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 5),
+                  if (_isRoundTrip) // Sadece gidiş-dönüşse görünür
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade100),
+                        onPressed: () async {
+                           final DateTime? picked = await showDatePicker(context: context, initialDate: _returnDate!, firstDate: _selectedDate, lastDate: DateTime.now().add(const Duration(days: 60)));
+                           if (picked != null) setState(() { _returnDate = picked; });
+                        },
+                        icon: const Icon(Icons.flight_land, color: Colors.blue),
+                        label: Text('${_returnDate?.day}/${_returnDate?.month}/${_returnDate?.year}', style: const TextStyle(color: Colors.blue)),
+                      ),
+                    ),
+                  const SizedBox(width: 5),
                   Expanded(
+                    // Kişi seçimi dropdown'ı (Eski kodun aynısı)
                     child: DropdownButtonFormField<int>(
                       initialValue: _passengerCount,
-                      decoration: const InputDecoration(labelText: 'Kişi', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(labelText: 'Kişi', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10)),
                       items: [1, 2, 3, 4].map((n) => DropdownMenuItem(value: n, child: Text('$n Yolcu'))).toList(),
                       onChanged: (val) => setState(() => _passengerCount = val!),
                     ),
@@ -429,7 +482,29 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                               ],
                             ),
                             trailing: Text('${flight.price} TL', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
-                            onTap: () => _showBookingModal(flight),
+                            onTap: () {
+                              if (_isRoundTrip && _selectedOutboundFlight == null) {
+                                // 1. AŞAMA: Gidiş seçildi, şimdi dönüş uçuşlarını ara!
+                                setState(() {
+                                  _selectedOutboundFlight = flight;
+                                  _isSearching = true;
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gidiş uçuşu seçildi! Şimdi dönüş uçuşunu seçin.'), backgroundColor: Colors.orange));
+                                
+                                // Hedefleri ters çevirip dönüş tarihini aratıyoruz
+                                FlightService().searchFlights(
+                                  origin: _selectedDestination, destination: _selectedOrigin,
+                                  date: _returnDate!, passengerCount: _passengerCount, isFlexible: false
+                                ).then((results) {
+                                  if (mounted) setState(() { _searchResults = results; _isSearching = false; });
+                                });
+                              } else {
+                                // 2. AŞAMA (Veya Tek Yön): Ödeme Modalını Aç
+                                // TODO: Modal artık hem _selectedOutboundFlight hem de mevcut flight(Dönüş) için toplam fiyat hesaplamalı.
+                                // Şimdilik ödeme fonksiyonunu tetikliyoruz.
+                                _showBookingModal(flight);
+                              }
+                            },
                           ),
                         );
                       },

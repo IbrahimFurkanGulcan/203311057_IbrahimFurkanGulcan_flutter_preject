@@ -2,29 +2,45 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/ticket_model.dart';
 import '../../services/ticket_service.dart';
-import 'check_in_screen.dart'; // Gerçek koltuk haritasına buradan yönlendireceğiz
+import 'check_in_screen.dart'; 
 
-class CheckInHubScreen extends StatelessWidget {
+class CheckInHubScreen extends StatefulWidget {
   const CheckInHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  State<CheckInHubScreen> createState() => _CheckInHubScreenState();
+}
 
+class _CheckInHubScreenState extends State<CheckInHubScreen> {
+  final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  
+  // PERFORMANS ÇÖZÜMÜ: Stream'i hafızaya alıyoruz (Jank/Kilitlenme Koruması)
+  late Stream<List<TicketModel>> _ticketsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    // Sayfa ilk yüklendiğinde Firebase bağlantısını kurar, bir daha koparmaz.
+    if (currentUserId != null) {
+      _ticketsStream = TicketService().getUserTicketsStream(currentUserId!);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     if (currentUserId == null) return const Center(child: Text("Lütfen giriş yapın."));
 
     return StreamBuilder<List<TicketModel>>(
-      stream: TicketService().getUserTicketsStream(currentUserId),
+      // BURASI ÖNEMLİ: Hafızaya aldığımız stream'i dinliyor!
+      stream: _ticketsStream, 
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
         if (snapshot.hasError) return Center(child: Text("Hata: ${snapshot.error}"));
         if (!snapshot.hasData || snapshot.data!.isEmpty) return _buildEmptyState();
 
-        // SADECE CHECK-IN ŞARTLARINI SAĞLAYANLARI FİLTRELE
         DateTime now = DateTime.now();
         List<TicketModel> availableForCheckIn = snapshot.data!.where((ticket) {
           int hoursLeft = ticket.date.difference(now).inHours;
-          // Kurallar: İptal edilmemiş, Check-in yapılmamış ve 1 ile 24 saat arası kalmış olacak
           return ticket.status == 'booked' && hoursLeft <= 24 && hoursLeft >= 1;
         }).toList();
 
@@ -66,11 +82,7 @@ class CheckInHubScreen extends StatelessWidget {
                         backgroundColor: Colors.blue,
                       ),
                       onPressed: () {
-                        // Tıklandığında o bileti alıp gerçek Koltuk Haritası ekranına gidiyoruz!
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => CheckInScreen(ticket: ticket)),
-                        );
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => CheckInScreen(ticket: ticket)));
                       },
                       icon: const Icon(Icons.event_seat, color: Colors.white),
                       label: const Text('Koltuk Seç ve Check-in Yap', style: TextStyle(color: Colors.white, fontSize: 16)),
@@ -94,17 +106,9 @@ class CheckInHubScreen extends StatelessWidget {
           children: [
             Icon(Icons.airplane_ticket_outlined, size: 80, color: Colors.grey.shade400),
             const SizedBox(height: 20),
-            const Text(
-              'Şu an Check-in yapılacak bir uçuşunuz bulunmuyor.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18, color: Colors.black54),
-            ),
+            const Text('Şu an Check-in yapılacak bir uçuşunuz bulunmuyor.', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, color: Colors.black54)),
             const SizedBox(height: 10),
-            const Text(
-              'Online Check-in işlemleri uçuşunuza 24 saat kala açılır ve 1 saat kala kapanır.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
+            const Text('Online Check-in işlemleri uçuşunuza 24 saat kala açılır ve 1 saat kala kapanır.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
           ],
         ),
       ),

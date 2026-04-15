@@ -14,6 +14,16 @@ class MyTicketsScreen extends StatefulWidget {
 
 class _MyTicketsScreenState extends State<MyTicketsScreen> {
   final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  late Stream<List<TicketModel>> _ticketsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    // YENİ EKLENEN: Firebase dinleyicisi SADECE sayfa ilk açıldığında 1 kez başlar!
+    if (currentUserId != null) {
+      _ticketsStream = TicketService().getUserTicketsStream(currentUserId!);
+    }
+  }
 
   // Bilet Detay Paneli ve İşlem Butonları
   void _showTicketDetails(BuildContext context, TicketModel ticket) {
@@ -182,9 +192,9 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
   Widget build(BuildContext context) {
     if (currentUserId == null) return const Center(child: Text("Lütfen giriş yapın."));
 
-    return StreamBuilder<List<TicketModel>>(
-      // Gerçek zamanlı okuma (Bilet iptal edilince anında sayfa güncellenir)
-      stream: TicketService().getUserTicketsStream(currentUserId!),
+    return StreamBuilder<List<TicketModel>>(   
+      
+      stream: _ticketsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
         if (snapshot.hasError) return Center(child: Text("Bir hata oluştu: ${snapshot.error}"));
