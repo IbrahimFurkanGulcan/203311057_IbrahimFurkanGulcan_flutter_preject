@@ -87,6 +87,71 @@ class TicketService {
     }
   }
 
+  //Kullanıcının Biletlerini Gerçek Zamanlı Getirme (Stream)
+  Stream<List<TicketModel>> getUserTicketsStream(String userId) {
+    return _firestore
+        .collection('tickets')
+        .where('userId', isEqualTo: userId)
+        // Tarihe göre yakın uçuşlar en üstte görünsün
+        .orderBy('date', descending: false) 
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => TicketModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  // Güvenli Bilet İptal İşlemi (Transaction)
+  Future<String> cancelTicket({
+    required String ticketId,
+    required String flightId,
+    required String userId,
+    required String seatClass,
+  }) async {
+    try {
+      DocumentReference ticketRef = _firestore.collection('tickets').doc(ticketId);
+      DocumentReference flightRef = _firestore.collection('flights').doc(flightId);
+      DocumentReference userRef = _firestore.collection('users').doc(userId);
+
+      await _firestore.runTransaction((transaction) async {
+        DocumentSnapshot ticketSnap = await transaction.get(ticketRef);
+        DocumentSnapshot flightSnap = await transaction.get(flightRef);
+        DocumentSnapshot userSnap = await transaction.get(userRef);
+
+        if (!ticketSnap.exists || !flightSnap.exists || !userSnap.exists) {
+          throw Exception("Kayıtlar bulunamadı, iptal işlemi durduruldu.");
+        }
+
+        // Uçuş verilerinden iade edilecek tutarı hesapla
+        double basePrice = (flightSnap.data() as Map<String, dynamic>)['price'] ?? 0.0;
+        double refundAmount = seatClass == 'business' ? basePrice * 2.5 : basePrice;
+
+        // Kullanıcı bakiyesini ve Uçuş koltuğunu oku
+        double currentBalance = (userSnap.data() as Map<String, dynamic>)['walletBalance'] ?? 0.0;
+        int availableSeats = (flightSnap.data() as Map<String, dynamic>)['availableSeats'] ?? 0;
+
+        // YAZMA İŞLEMLERİ 
+        // 1. Cüzdana parayı iade et
+        transaction.update(userRef, {'walletBalance': currentBalance + refundAmount});
+        // 2. Koltuğu uçağa geri ver (+1)
+        transaction.update(flightRef, {'availableSeats': availableSeats + 1});
+        // 3. Bilet statüsünü iptal olarak değiştir
+        transaction.update(ticketRef, {'status': 'cancelled'});
+
+        // Log kaydı oluştur
+        DocumentReference logRef = _firestore.collection('logs').doc();
+        transaction.set(logRef, {
+          'userId': userId,
+          'action': 'Bilet İptali (PNR: ${(ticketSnap.data() as Map)['pnrCode']}). İade: $refundAmount TL',
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      });
+
+      return "success";
+    } catch (e) {
+      return e.toString().replaceAll("Exception: ", "");
+    }
+  }
+
   // Yardımcı Fonksiyon: 6 haneli rastgele PNR kodu üretir
   String _generatePNR() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
