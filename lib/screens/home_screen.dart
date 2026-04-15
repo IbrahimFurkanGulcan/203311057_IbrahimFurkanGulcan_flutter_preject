@@ -6,7 +6,7 @@ import '../services/auth_service.dart';
 import 'package:ucak_bileti_rezervasyon_ve_check_in_sistemi/services/dummy_data_service.dart';
 import 'passenger/search_flight_screen.dart';
 import 'passenger/my_tickets_screen.dart';
-import 'passenger/check_in_screen.dart';
+import 'passenger/check_in_hub_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,7 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _pages = [
     const SearchFlightScreen(),
     const MyTicketsScreen(),
-    const CheckInScreen(),
+    const CheckInHubScreen(),
   ];
 
   @override

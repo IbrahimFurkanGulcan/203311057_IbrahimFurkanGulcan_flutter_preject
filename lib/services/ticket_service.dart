@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:ucak_bileti_rezervasyon_ve_check_in_sistemi/models/flight_model.dart';
 import '../models/ticket_model.dart';
 import 'dart:math';
 
@@ -157,5 +159,123 @@ class TicketService {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     Random rnd = Random();
     return String.fromCharCodes(Iterable.generate(6, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+  }
+
+  // Uçuşa ait DOLU koltukları gerçek zamanlı dinler (Biri koltuğu seçerse ekranda anında kırmızı olur)
+  Stream<List<String>> getTakenSeatsStream(String flightId) {
+    return _firestore
+        .collection('tickets')
+        .where('flightId', isEqualTo: flightId)
+        .where('status', isEqualTo: 'checked_in')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => doc.data()['seatNumber'] as String?)
+            .where((seat) => seat != null)
+            .cast<String>()
+            .toList());
+  }
+
+  // Check-in İşlemini Veritabanına Kaydetme (Çakışma Kontrollü Transaction)
+  Future<String> performCheckIn({
+    required String ticketId,
+    required String seatNumber,
+    required String flightId,
+  }) async {
+    try {
+      return await _firestore.runTransaction((transaction) async {
+        // Kritik Kontrol: Acaba bu koltuk saliseler önce başkası tarafından kapıldı mı?
+        QuerySnapshot existingTickets = await _firestore
+            .collection('tickets')
+            .where('flightId', isEqualTo: flightId)
+            .where('seatNumber', isEqualTo: seatNumber)
+            .where('status', isEqualTo: 'checked_in')
+            .get();
+
+        if (existingTickets.docs.isNotEmpty) {
+          throw Exception("Maalesef bu koltuk az önce başka bir yolcu tarafından seçildi.");
+        }
+
+        // Boşsa bileti güncelle
+        DocumentReference ticketRef = _firestore.collection('tickets').doc(ticketId);
+        transaction.update(ticketRef, {
+          'status': 'checked_in',
+          'seatNumber': seatNumber,
+        });
+
+        // Log Kaydı
+        DocumentReference logRef = _firestore.collection('logs').doc();
+        transaction.set(logRef, {
+          'userId': FirebaseAuth.instance.currentUser?.uid ?? 'Bilinmiyor',
+          'action': 'Check-in Yapıldı. Bilet: $ticketId, Koltuk: $seatNumber',
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+        return "success";
+      });
+    } catch (e) {
+      return e.toString().replaceAll("Exception: ", "");
+    }
+  }
+  
+  // 3. Güvenli Uçuş Değiştirme İşlemi (Multi-Transaction)
+  Future<String> changeTicket({
+    required TicketModel oldTicket,
+    required FlightModel newFlight,
+    required double priceDifference, // Pozitifse ödeme yapacak, negatifse iade alacak
+  }) async {
+    try {
+      DocumentReference oldFlightRef = _firestore.collection('flights').doc(oldTicket.flightId);
+      DocumentReference newFlightRef = _firestore.collection('flights').doc(newFlight.id);
+      DocumentReference userRef = _firestore.collection('users').doc(oldTicket.userId);
+      DocumentReference ticketRef = _firestore.collection('tickets').doc(oldTicket.id);
+
+      await _firestore.runTransaction((transaction) async {
+        DocumentSnapshot userSnap = await transaction.get(userRef);
+        DocumentSnapshot newFlightSnap = await transaction.get(newFlightRef);
+        DocumentSnapshot oldFlightSnap = await transaction.get(oldFlightRef);
+
+        double currentBalance = (userSnap.data() as Map<String, dynamic>)['walletBalance'] ?? 0.0;
+        int newFlightSeats = (newFlightSnap.data() as Map<String, dynamic>)['availableSeats'] ?? 0;
+        int oldFlightSeats = (oldFlightSnap.data() as Map<String, dynamic>)['availableSeats'] ?? 0;
+
+        // Kontroller
+        if (priceDifference > 0 && currentBalance < priceDifference) {
+          throw Exception("Cüzdan bakiyeniz fiyat farkını ödemek için yetersiz.");
+        }
+        if (newFlightSeats <= 0) {
+          throw Exception("Seçilen yeni uçuşta boş koltuk kalmadı.");
+        }
+
+        // 1. Cüzdan Güncelleme (Fark pozitifse düş, negatifse ekle)
+        transaction.update(userRef, {'walletBalance': currentBalance - priceDifference});
+
+        // 2. Koltuk Sayıları Güncelleme (Senin hatırlattığın kritik nokta!)
+        transaction.update(oldFlightRef, {'availableSeats': oldFlightSeats + 1}); // Eski uçuşa koltuk iade
+        transaction.update(newFlightRef, {'availableSeats': newFlightSeats - 1}); // Yeni uçuştan koltuk düş
+
+        // 3. Bileti Yeni Bilgilerle Güncelle
+        transaction.update(ticketRef, {
+          'flightId': newFlight.id,
+          'flightNumber': newFlight.flightNumber,
+          'date': Timestamp.fromDate(newFlight.date),
+          'arrivalTime': Timestamp.fromDate(newFlight.arrivalTime),
+          'terminal': newFlight.terminal,
+          'status': 'booked', // Eğer check-in yapılmışsa bile sıfırlanır
+          'seatNumber': null, // Yeni uçuş için tekrar check-in yapmalı
+        });
+
+        // Log
+        DocumentReference logRef = _firestore.collection('logs').doc();
+        transaction.set(logRef, {
+          'userId': oldTicket.userId,
+          'action': 'Uçuş Değiştirildi. Eski: ${oldTicket.flightNumber}, Yeni: ${newFlight.flightNumber}. Fark: $priceDifference TL',
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      });
+
+      return "success";
+    } catch (e) {
+      return e.toString().replaceAll("Exception: ", "");
+    }
   }
 }

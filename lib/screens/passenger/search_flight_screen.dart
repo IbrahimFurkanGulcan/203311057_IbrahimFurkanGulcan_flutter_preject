@@ -79,16 +79,22 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
       return;
     }
 
+    // Set state ONCE before the async call
     setState(() { _isSearching = true; });
 
+    // The potentially heavy API call
     List<FlightModel> results = await FlightService().searchFlights(
       origin: _selectedOrigin,
       destination: _selectedDestination,
       date: _selectedDate,
       passengerCount: _passengerCount,
-      isFlexible: isFlexible, // Burayı ekledik
+      isFlexible: isFlexible,
     );
 
+    // Guard against the widget being unmounted during the await
+    if (!mounted) return;
+
+    // Set state ONCE after the async call
     setState(() {
       _searchResults = results;
       _isSearching = false;
@@ -118,17 +124,18 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Ekranı tam kaplayabilmesi için
-      backgroundColor: Colors.transparent, // Arka planı şeffaf yapıp kendimiz şekillendireceğiz
+      isScrollControlled: true, 
+      backgroundColor: Colors.transparent, 
       builder: (context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
             
-            // Toplam fiyatı, seçilen koltuk sınıflarına göre dinamik hesaplayan fonksiyon
+            // OPTIMIZATION: Calculate total price here, but ideally, this logic should be a class method 
+            // if it gets more complex. For now, it's okay inside StatefulBuilder but keep it lean.
             double calculateTotalPrice() {
               double total = 0;
               for (String seatClass in seatClasses) {
-                total += seatClass == 'business' ? basePrice * 2.5 : basePrice; // Business 2.5 katı
+                total += seatClass == 'business' ? basePrice * 2.5 : basePrice; 
               }
               return total;
             }

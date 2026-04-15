@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/ticket_model.dart';
 import '../../services/ticket_service.dart';
+import 'check_in_screen.dart';
+import 'change_flight_screen.dart';
 
 class MyTicketsScreen extends StatefulWidget {
   const MyTicketsScreen({super.key});
@@ -63,9 +65,9 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
               if (canCheckIn)
                 ElevatedButton.icon(
                   onPressed: () {
-                    Navigator.pop(context);
-                    // TODO: 4. AŞAMA - Check-in sayfasına yönlendirilecek
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Check-in Sayfası Yapım Aşamasında')));
+                    Navigator.pop(context); // Önce alt paneli kapat
+                    // Gerçek sayfaya yönlendir
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => CheckInScreen(ticket: ticket)));
                   },
                   icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
                   label: const Text('Check-in Yap', style: TextStyle(color: Colors.white)),
@@ -76,9 +78,12 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: () {
-                    Navigator.pop(context);
-                    // TODO: 5. AŞAMA - Değişim sayfasına yönlendirilecek
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Değişim Sayfası Yapım Aşamasında')));
+                    Navigator.pop(context); // Önce alt paneli kapat
+                    // Gerçek Uçuş Değiştirme sayfasına yönlendir
+                    Navigator.push(
+                      context, 
+                      MaterialPageRoute(builder: (context) => ChangeFlightScreen(ticket: ticket))
+                    );
                   },
                   icon: const Icon(Icons.swap_horiz),
                   label: const Text('Uçuşu Değiştir'),
