@@ -11,6 +11,8 @@ class FlightModel {
   final int availableSeats;
   final String status; // scheduled, delayed, cancelled
   final String? gate;  // Uçağa biniş kapısı
+  final DateTime arrivalTime; // Varış Saati
+  final String? terminal;
 
   FlightModel({
     required this.id,
@@ -23,6 +25,8 @@ class FlightModel {
     required this.availableSeats,
     this.status = 'scheduled',
     this.gate,
+    required this.arrivalTime, 
+    this.terminal,
   });
 
   factory FlightModel.fromMap(Map<String, dynamic> map, String documentId) {
@@ -36,6 +40,8 @@ class FlightModel {
       totalSeats: map['totalSeats'] ?? 0,
       availableSeats: map['availableSeats'] ?? 0,
       status: map['status'] ?? 'scheduled',
+      arrivalTime: (map['arrivalTime'] as Timestamp).toDate(),
+      terminal: map['terminal'],
       gate: map['gate'],
     );
   }
@@ -51,6 +57,8 @@ class FlightModel {
       'availableSeats': availableSeats,
       'status': status,
       'gate': gate,
+      'arrivalTime': Timestamp.fromDate(arrivalTime), 
+      'terminal': terminal,
     };
   }
 }

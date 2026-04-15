@@ -19,6 +19,8 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
   final _priceController = TextEditingController();
   final _seatsController = TextEditingController();
   final _gateController = TextEditingController();
+  final _durationController = TextEditingController(); 
+  final _terminalController = TextEditingController();
 
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
@@ -69,6 +71,9 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
         _selectedTime!.minute,
       );
 
+      int durationMinutes = int.tryParse(_durationController.text.trim()) ?? 60; // Boşsa 60 dk say
+      DateTime calculatedArrival = finalDateTime.add(Duration(minutes: durationMinutes));
+
       // Modelimizi oluşturuyoruz (id boş, çünkü Firebase kendisi doc id verecek)
       FlightModel newFlight = FlightModel(
         id: '', 
@@ -79,7 +84,9 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
         price: double.parse(_priceController.text.trim()),
         totalSeats: int.parse(_seatsController.text.trim()),
         availableSeats: int.parse(_seatsController.text.trim()), // Başlangıçta hepsi boş
-        gate: _gateController.text.trim().toUpperCase(),
+        gate: _gateController.text.trim().toUpperCase(), 
+        arrivalTime: calculatedArrival, // HESAPLANAN VARIŞ SAATİ
+        terminal: _terminalController.text.trim(),
       );
 
       // Servisi çağırıp veritabanına yazıyoruz
@@ -165,6 +172,27 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
                 TextFormField(
                   controller: _gateController,
                   decoration: const InputDecoration(labelText: 'Kapı No (Opsiyonel)', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _durationController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Uçuş Süresi (Dk)', border: OutlineInputBorder()),
+                        validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _terminalController,
+                        decoration: const InputDecoration(labelText: 'Terminal (Örn: SAW - İç Hatlar)', border: OutlineInputBorder()),
+                        validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 20),
                 // Tarih ve Saat Seçim Butonları

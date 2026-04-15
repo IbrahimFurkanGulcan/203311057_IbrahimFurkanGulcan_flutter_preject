@@ -258,7 +258,14 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                         contactEmail: currentUser.email ?? '', // Bileti alan kişinin maili eklendi
                                         contactPhone: phoneControllers[i].text.trim(),
                                         passengerSex: passengerSexes[i],
-                                        seatClass: seatClasses[i],
+                                        seatClass: seatClasses[i], 
+                                        createdAt: DateTime.now(), // Satın alma anı (Şu an)
+                                        date: flight.date,
+                                        flightNumber: flight.flightNumber,
+                                        origin: flight.origin,
+                                        destination: flight.destination,
+                                        arrivalTime: flight.arrivalTime,
+                                        terminal: flight.terminal ?? 'Belirtilmedi',
                                       ));
                                     }
 
@@ -400,8 +407,20 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           child: ListTile(
                             leading: const Icon(Icons.flight, color: Colors.blue, size: 40),
-                            title: Text('${flight.flightNumber} | ${flight.date.hour.toString().padLeft(2, '0')}:${flight.date.minute.toString().padLeft(2, '0')}'),
-                            subtitle: seatInfo, 
+                            title: Text('${flight.flightNumber} | ${flight.origin} ➔ ${flight.destination}'),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 4),
+                                // Kalkış ve Varış Saatini yan yana gösteriyoruz
+                                Text('${flight.date.hour.toString().padLeft(2, '0')}:${flight.date.minute.toString().padLeft(2, '0')} Kalkış ➔ ${flight.arrivalTime.hour.toString().padLeft(2, '0')}:${flight.arrivalTime.minute.toString().padLeft(2, '0')} Varış', 
+                                     style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                                // Terminal bilgisi
+                                Text('Terminal: ${flight.terminal ?? "Belirtilmedi"}', style: const TextStyle(fontSize: 13, color: Colors.blueGrey)),
+                                const SizedBox(height: 4),
+                                seatInfo, 
+                              ],
+                            ),
                             trailing: Text('${flight.price} TL', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
                             onTap: () => _showBookingModal(flight),
                           ),

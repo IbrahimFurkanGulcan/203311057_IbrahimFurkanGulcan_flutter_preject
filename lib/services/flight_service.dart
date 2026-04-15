@@ -44,6 +44,8 @@ class FlightService {
         availableSeats: flight.totalSeats,
         status: flight.status,
         gate: flight.gate,
+        arrivalTime: flight.arrivalTime, 
+        terminal: flight.terminal,
       );
 
       await docRef.set(flightWithId.toMap());

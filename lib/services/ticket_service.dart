@@ -60,6 +60,13 @@ class TicketService {
             passengerSex: ticket.passengerSex,
             seatClass: ticket.seatClass,
             status: 'booked',
+            createdAt: DateTime.now(), 
+            date: ticket.date,
+            flightNumber: ticket.flightNumber,
+            origin: ticket.origin,
+            destination: ticket.destination,
+            arrivalTime: ticket.arrivalTime,
+            terminal: ticket.terminal,
           );
 
           transaction.set(newTicketRef, ticketWithId.toMap());
