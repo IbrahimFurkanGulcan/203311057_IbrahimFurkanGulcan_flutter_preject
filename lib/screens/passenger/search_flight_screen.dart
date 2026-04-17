@@ -23,11 +23,11 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
   bool _isRoundTrip = false; // Çift yön mü?
   DateTime? _returnDate;     // Dönüş tarihi
   FlightModel? _selectedOutboundFlight; // Seçilen ilk uçuş (Sepet)
-
+  bool _isAdmin = false;
   UserModel? _userProfile;
 
   // Havalimanı Listesi (Test verilerimizdeki lokasyonlar)
-  final List<String> _airports = [
+  final List<String> _airports = [                             //admin kendi uçuş eklerse burda nasıl görüntüleyecek
     'İstanbul',
     'Ankara',
     'İzmir',
@@ -57,6 +57,7 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
       if (doc.exists && mounted) {
         setState(() {
           _userProfile = UserModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+          _isAdmin = (doc.data() as Map<String, dynamic>)['role'] == 'admin';
         });
       }
     }
@@ -104,7 +105,7 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
     });
   }
 
-  // Ödeme ve Dinamik Yolcu Bilgileri Penceresi (BottomSheet)
+  
   // Ödeme ve Dinamik Yolcu Bilgileri Penceresi (BottomSheet) - GİDİŞ/DÖNÜŞ DESTEKLİ
   void _showBookingModal(FlightModel currentFlight) {
     // Eğer Gidiş-Dönüş seçildiyse; elimizde bir ilk uçuş (outbound) ve şu an tıklanan uçuş (return) var demektir.
@@ -272,6 +273,11 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                     
                                     // Yardımcı fonksiyon: Bilet modelini oluşturur
                                     void addTicketToList(FlightModel flight, int index) {
+
+                                      double calculatedTicketPrice = seatClasses[index] == 'business' 
+                                                                    ? flight.price * 2.5 
+                                                                    : flight.price;
+
                                       newTickets.add(TicketModel(
                                         id: '', pnrCode: '', userId: currentUser.uid, flightId: flight.id,
                                         passengerName: nameControllers[index].text.trim().toUpperCase(),
@@ -280,7 +286,7 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                         passengerSex: passengerSexes[index], seatClass: seatClasses[index], 
                                         createdAt: DateTime.now(), date: flight.date, flightNumber: flight.flightNumber,
                                         origin: flight.origin, destination: flight.destination,
-                                        arrivalTime: flight.arrivalTime, terminal: flight.terminal ?? 'Belirtilmedi',
+                                        arrivalTime: flight.arrivalTime, terminal: flight.terminal ?? 'Belirtilmedi', price: calculatedTicketPrice,
                                       ));
                                     }
 
@@ -331,6 +337,83 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
           },
         );
       },
+    );
+  }
+
+  
+  // --- ADMİN İŞLEMLERİ ---
+  void _showDelayDialog(FlightModel flight) {
+    int delayHours = 2;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog( // DEĞİŞTİ: context yerine dialogContext yazdık
+        title: Text('${flight.flightNumber} Rötar Ekle'),
+        content: DropdownButtonFormField<int>(
+          initialValue: delayHours,
+          decoration: const InputDecoration(labelText: 'Erteleme Süresi'),
+          items: [1, 2, 3, 4, 5, 12, 24].map((h) => DropdownMenuItem(value: h, child: Text('$h Saat'))).toList(),
+          onChanged: (val) => delayHours = val!,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Vazgeç')), // DEĞİŞTİ
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            onPressed: () async {
+              // 1. Önce Dialogu kendi context'i ile güvenle kapat
+              Navigator.pop(dialogContext); 
+              
+              // 2. Artık Ana Ekranın (State) context'indeyiz, güvenle SnackBar gösterebiliriz
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('İşleniyor...')));
+              
+              String res = await FlightService().delayFlight(flight.id, Duration(hours: delayHours));
+              
+              // 3. Bekleme sonrası Ana Ekran hala açık mı kontrolü (Hata engelleyici)
+              if (!mounted) return; 
+              
+              if (res == "success") {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rötar eklendi ve yolculara bildirildi!'), backgroundColor: Colors.green));
+                _searchFlights(isFlexible: true); 
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res), backgroundColor: Colors.red));
+              }
+            },
+            child: const Text('Rötarı Onayla', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCancelDialog(FlightModel flight) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog( // DEĞİŞTİ: context yerine dialogContext yazdık
+        title: const Text('⚠️ Uçuşu İptal Et'),
+        content: const Text('Bu uçuş iptal edilecek, tüm biletler geçersiz sayılacak ve ücretler yolculara iade edilecek.\n\nEmin misiniz?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Vazgeç')), // DEĞİŞTİ
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(dialogContext); // Dialogu kendi context'i ile kapat
+              
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('İptal işlemi başlatıldı, lütfen bekleyin...')));
+              
+              String res = await FlightService().cancelFlightByAdmin(flight.id);
+              
+              if (!mounted) return; // Ana Ekran kontrolü
+              
+              if (res == "success") {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uçuş İptal Edildi ve İadeler Yapıldı!'), backgroundColor: Colors.green));
+                _searchFlights(isFlexible: true); 
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res), backgroundColor: Colors.red));
+              }
+            },
+            child: const Text('İptal Et', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -472,36 +555,48 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const SizedBox(height: 4),
-                                // Kalkış ve Varış Saatini yan yana gösteriyoruz
                                 Text('${flight.date.hour.toString().padLeft(2, '0')}:${flight.date.minute.toString().padLeft(2, '0')} Kalkış ➔ ${flight.arrivalTime.hour.toString().padLeft(2, '0')}:${flight.arrivalTime.minute.toString().padLeft(2, '0')} Varış', 
                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-                                // Terminal bilgisi
                                 Text('Terminal: ${flight.terminal ?? "Belirtilmedi"}', style: const TextStyle(fontSize: 13, color: Colors.blueGrey)),
                                 const SizedBox(height: 4),
                                 seatInfo, 
                               ],
                             ),
-                            trailing: Text('${flight.price} TL', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                            // YENİ ADMİN MENÜLÜ FİYAT KISMI
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('${flight.price} TL', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                                if (_isAdmin)
+                                  PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_vert, color: Colors.red),
+                                    onSelected: (value) {
+                                      if (value == 'delay') _showDelayDialog(flight);
+                                      if (value == 'cancel') _showCancelDialog(flight);
+                                    },
+                                    itemBuilder: (context) => [
+                                      const PopupMenuItem(value: 'delay', child: Text('⏳ Rötar Ekle')),
+                                      const PopupMenuItem(value: 'cancel', child: Text('❌ Uçuşu İptal Et', style: TextStyle(color: Colors.red))),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                            // SİLİNEN TIKLAMA FONKSİYONU BURAYA GERİ GELDİ
                             onTap: () {
                               if (_isRoundTrip && _selectedOutboundFlight == null) {
-                                // 1. AŞAMA: Gidiş seçildi, şimdi dönüş uçuşlarını ara!
                                 setState(() {
                                   _selectedOutboundFlight = flight;
                                   _isSearching = true;
                                 });
                                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gidiş uçuşu seçildi! Şimdi dönüş uçuşunu seçin.'), backgroundColor: Colors.orange));
                                 
-                                // Hedefleri ters çevirip dönüş tarihini aratıyoruz
                                 FlightService().searchFlights(
                                   origin: _selectedDestination, destination: _selectedOrigin,
                                   date: _returnDate!, passengerCount: _passengerCount, isFlexible: false
                                 ).then((results) {
                                   if (mounted) setState(() { _searchResults = results; _isSearching = false; });
                                 });
-                              } else {
-                                // 2. AŞAMA (Veya Tek Yön): Ödeme Modalını Aç
-                                // TODO: Modal artık hem _selectedOutboundFlight hem de mevcut flight(Dönüş) için toplam fiyat hesaplamalı.
-                                // Şimdilik ödeme fonksiyonunu tetikliyoruz.
+                              } else {                                
                                 _showBookingModal(flight);
                               }
                             },

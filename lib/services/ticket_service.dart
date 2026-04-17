@@ -75,7 +75,7 @@ class TicketService {
             contactEmail: ticket.contactEmail, contactPhone: ticket.contactPhone, passengerSex: ticket.passengerSex,
             seatClass: ticket.seatClass, status: 'booked', createdAt: DateTime.now(), date: ticket.date,
             flightNumber: ticket.flightNumber, origin: ticket.origin, destination: ticket.destination,
-            arrivalTime: ticket.arrivalTime, terminal: ticket.terminal,
+            arrivalTime: ticket.arrivalTime, terminal: ticket.terminal, price: ticket.price,
           );
           transaction.set(newTicketRef, ticketWithId.toMap());
         }

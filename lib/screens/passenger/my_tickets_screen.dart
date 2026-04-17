@@ -19,7 +19,7 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
   @override
   void initState() {
     super.initState();
-    // YENİ EKLENEN: Firebase dinleyicisi SADECE sayfa ilk açıldığında 1 kez başlar!
+    // Firebase dinleyicisi SADECE sayfa ilk açıldığında 1 kez başlar!
     if (currentUserId != null) {
       _ticketsStream = TicketService().getUserTicketsStream(currentUserId!);
     }
@@ -222,7 +222,9 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(ticket.flightNumber, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                          // 1. TAŞMA ÖNLEMİ: Uçuş numarası çok uzunsa kes
+                          Expanded(child: Text(ticket.flightNumber, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey), overflow: TextOverflow.ellipsis)),
+                          const SizedBox(width: 10),
                           _buildStatusBadge(ticket),
                         ],
                       ),
@@ -230,20 +232,31 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(ticket.origin, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                              Text('${ticket.date.hour.toString().padLeft(2, '0')}:${ticket.date.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 16, color: Colors.blue)),
-                            ],
+                          // 2. TAŞMA ÖNLEMİ: Sol Tarafı Expanded içine aldık
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(ticket.origin, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                                Text('${ticket.date.hour.toString().padLeft(2, '0')}:${ticket.date.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 16, color: Colors.blue)),
+                                const SizedBox(height: 4),
+                                Text('Terminal: ${ticket.terminal}', style: const TextStyle(fontSize: 12, color: Colors.grey), overflow: TextOverflow.ellipsis),
+                              ],
+                            ),
                           ),
-                          const Icon(Icons.flight_takeoff, color: Colors.blue, size: 30),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(ticket.destination, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                              Text('${ticket.arrivalTime.hour.toString().padLeft(2, '0')}:${ticket.arrivalTime.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 16, color: Colors.blue)),
-                            ],
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Icon(Icons.flight_takeoff, color: Colors.blue, size: 30),
+                          ),
+                          // 3. TAŞMA ÖNLEMİ: Sağ Tarafı Expanded içine aldık
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(ticket.destination, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                                Text('${ticket.arrivalTime.hour.toString().padLeft(2, '0')}:${ticket.arrivalTime.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 16, color: Colors.blue)),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -251,10 +264,19 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Yolcu: ${ticket.passengerName}', style: const TextStyle(color: Colors.black87)),
+                          // 4. TAŞMA ÖNLEMİ: İsim çok uzunsa sığdır
+                          Expanded(child: Text('Yolcu: ${ticket.passengerName}', style: const TextStyle(color: Colors.black87), overflow: TextOverflow.ellipsis)),
                           Text('Sınıf: ${ticket.seatClass.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.bold)),
                         ],
-                      )
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Ödenen Tutar:', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                          Text('${ticket.price} TL', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 16)),
+                        ],
+                      ),
                     ],
                   ),
                 ),

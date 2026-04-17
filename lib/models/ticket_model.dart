@@ -11,6 +11,7 @@ class TicketModel {
   final String contactPhone; // İletişim Telefonu
   final String seatClass; // economy, business
   final String status;
+  final double price;
   final String passengerSex; 
   final String? seatNumber; 
   final DateTime createdAt; // Satın Alma Tarihi
@@ -32,6 +33,7 @@ class TicketModel {
     required this.contactPhone,
     required this.passengerSex,
     required this.createdAt,
+    required this.price,
     required this.date,
     required this.flightNumber, 
     required this.origin,       
@@ -56,6 +58,7 @@ class TicketModel {
       terminal: map['terminal'] ?? '',               
       passengerName: map['passengerName'] ?? '',
       passengerTcNo: map['passengerTcNo'] ?? '',
+      price: map['price'] ?? '',
       contactEmail: map['contactEmail'] ?? '',
       contactPhone: map['contactPhone'] ?? '',
       passengerSex: map['passengerSex'] ?? '',
@@ -79,6 +82,7 @@ class TicketModel {
       'passengerSex': passengerSex,
       'seatClass': seatClass,
       'status': status,
+      'price': price,
       'seatNumber': seatNumber,
       'createdAt': Timestamp.fromDate(createdAt),
       'date': Timestamp.fromDate(date),

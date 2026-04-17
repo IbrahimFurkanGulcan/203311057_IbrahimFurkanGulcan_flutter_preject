@@ -166,6 +166,6 @@ TicketModel _createMockTicket(String userId, String flightId) {
     flightNumber: 'TK-TEST', origin: 'IST', destination: 'ANK',
     arrivalTime: DateTime.now(), terminal: '1', passengerName: 'Test',
     passengerTcNo: '123', contactEmail: '', contactPhone: '',
-    passengerSex: 'Erkek', createdAt: DateTime.now(), date: DateTime.now(), seatClass: 'economy'
+    passengerSex: 'Erkek', createdAt: DateTime.now(), date: DateTime.now(), seatClass: 'economy', price: 1523.0
   );
 }
