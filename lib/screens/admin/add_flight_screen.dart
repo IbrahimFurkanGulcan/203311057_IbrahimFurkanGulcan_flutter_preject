@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../models/flight_model.dart';
 import '../../services/flight_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
+
+
 
 class AddFlightScreen extends StatefulWidget {
   const AddFlightScreen({super.key});
@@ -20,8 +25,9 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
   final _seatsController = TextEditingController();
   final _gateController = TextEditingController();
   final _durationController = TextEditingController(); 
-  final _terminalController = TextEditingController();
-
+  final _terminalController = TextEditingController();  
+  final _destinationTerminalController = TextEditingController();
+  
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   bool _isLoading = false;
@@ -74,12 +80,18 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
       int durationMinutes = int.tryParse(_durationController.text.trim()) ?? 60; // Boşsa 60 dk say
       DateTime calculatedArrival = finalDateTime.add(Duration(minutes: durationMinutes));
 
+      String formatCity(String city) {
+        if (city.isEmpty) return city;
+        String lower = city.trim().replaceAll('İ', 'i').replaceAll('I', 'ı').toLowerCase();
+        return lower[0].toUpperCase() + lower.substring(1);
+      }
+
       // Modelimizi oluşturuyoruz (id boş, çünkü Firebase kendisi doc id verecek)
       FlightModel newFlight = FlightModel(
         id: '', 
         flightNumber: _flightNoController.text.trim().toUpperCase(),
-        origin: _originController.text.trim().toUpperCase(),
-        destination: _destinationController.text.trim().toUpperCase(),
+        origin: formatCity(_originController.text),           
+        destination: formatCity(_destinationController.text),
         date: finalDateTime,
         price: double.parse(_priceController.text.trim()),
         totalSeats: int.parse(_seatsController.text.trim()),
@@ -97,6 +109,20 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
       setState(() { _isLoading = false; });
 
       if (result == "success") {
+        try {
+          String adminId = FirebaseAuth.instance.currentUser?.uid ?? 'Bilinmeyen Admin';
+          await FirebaseFirestore.instance.collection('logs').add({
+            'userId': adminId,
+            'action': '${newFlight.flightNumber} sefer sayılı yeni uçuş eklendi (${newFlight.origin} ➔ ${newFlight.destination}).',
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint("Log hatası: $e"); 
+        }
+
+        // "Bekleme bitti, eğer sayfa hala ekrandaysa devam et, kapandıysa burada dur!"
+        if (!mounted) return; 
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Uçuş başarıyla eklendi!'), backgroundColor: Colors.green),
         );
@@ -123,35 +149,54 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
               children: [
                 TextFormField(
                   controller: _flightNoController,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
                   decoration: const InputDecoration(labelText: 'Uçuş No (Örn: TK-777)', border: OutlineInputBorder()),
                   validator: (value) => value!.isEmpty ? 'Boş bırakılamaz' : null,
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _originController,
-                        decoration: const InputDecoration(labelText: 'Kalkış (Örn: IST)', border: OutlineInputBorder()),
-                        validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _destinationController,
-                        decoration: const InputDecoration(labelText: 'Varış (Örn: ESB)', border: OutlineInputBorder()),
-                        validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
-                      ),
-                    ),
-                  ],
+                // --- 1. KALKIŞ BİLGİLERİ ---
+                TextFormField(
+                  controller: _originController,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
+                  decoration: const InputDecoration(labelText: 'Kalkış Şehri (Örn: TRABZON)', border: OutlineInputBorder()),
+                  validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
                 ),
                 const SizedBox(height: 10),
+                TextFormField(
+                  controller: _terminalController, // Kalkış terminali için mevcut controller
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
+                  decoration: const InputDecoration(
+                    labelText: 'Kalkış Havalimanı ve Terminali (Örn: Trabzon Hvl. - İç Hatlar)', 
+                    border: OutlineInputBorder()
+                  ),
+                  validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
+                ),
+                const SizedBox(height: 20), // Araya biraz daha boşluk koyduk ki Kalkış/Varış blokları ayrılsın
+
+                // --- 2. VARIŞ BİLGİLERİ ---
+                TextFormField(
+                  controller: _destinationController,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
+                  decoration: const InputDecoration(labelText: 'Varış Şehri (Örn: LONDRA)', border: OutlineInputBorder()),
+                  validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _destinationTerminalController,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
+                  decoration: const InputDecoration(
+                    labelText: 'Varış Havalimanı ve Terminali (Örn: Heathrow - T2)', 
+                    border: OutlineInputBorder()
+                  ),
+                  validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
+                ),
+                const SizedBox(height: 20),
                 Row(
                   children: [
                     Expanded(
                       child: TextFormField(
                         controller: _priceController,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(labelText: 'Fiyat (TL)', border: OutlineInputBorder()),
                         validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
@@ -162,6 +207,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
                       child: TextFormField(
                         controller: _seatsController,
                         keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         decoration: const InputDecoration(labelText: 'Kapasite', border: OutlineInputBorder()),
                         validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
                       ),
@@ -180,18 +226,13 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
                       child: TextFormField(
                         controller: _durationController,
                         keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         decoration: const InputDecoration(labelText: 'Uçuş Süresi (Dk)', border: OutlineInputBorder()),
                         validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _terminalController,
-                        decoration: const InputDecoration(labelText: 'Terminal (Örn: SAW - İç Hatlar)', border: OutlineInputBorder()),
-                        validator: (value) => value!.isEmpty ? 'Zorunlu' : null,
-                      ),
-                    ),
+                    
                   ],
                 ),
                 const SizedBox(height: 20),

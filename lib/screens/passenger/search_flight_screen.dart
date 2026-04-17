@@ -6,6 +6,8 @@ import '../../services/flight_service.dart';
 import '../../services/ticket_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/user_model.dart';
+import 'dart:async';
+import 'package:flutter/services.dart';
 
 class SearchFlightScreen extends StatefulWidget {
   const SearchFlightScreen({super.key});
@@ -25,18 +27,10 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
   FlightModel? _selectedOutboundFlight; // Seçilen ilk uçuş (Sepet)
   bool _isAdmin = false;
   UserModel? _userProfile;
-
-  // Havalimanı Listesi (Test verilerimizdeki lokasyonlar)
-  final List<String> _airports = [                             //admin kendi uçuş eklerse burda nasıl görüntüleyecek
-    'İstanbul',
-    'Ankara',
-    'İzmir',
-    'Antalya',
-    'Paris',
-    'New York',
-    'Londra',
-    'Dubai',
-  ];
+  Map<String, List<String>> _availableRoutes = {};
+  List<String> _origins = ['İstanbul'];
+  List<String> _destinations = ['Ankara'];
+  StreamSubscription? _routeSubscription;
 
   final GlobalKey<FormState> _modalFormKey = GlobalKey<FormState>();
 
@@ -46,7 +40,19 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserProfile(); // Sayfa açılırken profili yükle
+    _loadUserProfile();
+    
+    // Veritabanındaki 'flights' koleksiyonunu canlı dinliyoruz.
+    // Admin yeni uçuş eklediğinde veya sildiğinde bu blok otomatik tetiklenir!
+    _routeSubscription = FirebaseFirestore.instance.collection('flights').snapshots().listen((_) {
+      _loadAirports(); // Rotaları anında güncelle
+    });
+  }
+
+  @override
+  void dispose() {
+    _routeSubscription?.cancel();
+    super.dispose();
   }
 
   // Giriş yapan kişinin verilerini bir kez çekip hafızaya alıyoruz
@@ -60,6 +66,25 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
           _isAdmin = (doc.data() as Map<String, dynamic>)['role'] == 'admin';
         });
       }
+    }
+  }
+
+  Future<void> _loadAirports() async {
+    Map<String, List<String>> routes = await FlightService().getAvailableRoutes();
+    if (routes.isNotEmpty && mounted) {
+      setState(() {
+        _availableRoutes = routes;
+        _origins = routes.keys.toList()..sort();
+
+        if (!_origins.contains(_selectedOrigin)) {
+          _selectedOrigin = _origins.first;
+        }
+
+        _destinations = routes[_selectedOrigin] ?? [];
+        if (!_destinations.contains(_selectedDestination)) {
+          _selectedDestination = _destinations.isNotEmpty ? _destinations.first : '';
+        }
+      });
     }
   }
 
@@ -194,6 +219,7 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                   const SizedBox(height: 10),
                                   TextFormField(
                                     controller: nameControllers[index],
+                                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
                                     decoration: const InputDecoration(labelText: 'Ad Soyad', isDense: true, border: OutlineInputBorder()),
                                     validator: (v) => v!.isEmpty ? 'Zorunlu' : null,
                                   ),
@@ -202,6 +228,7 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                     controller: tcControllers[index],
                                     keyboardType: TextInputType.number,
                                     maxLength: 11,
+                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                                     decoration: const InputDecoration(labelText: 'TC Kimlik No', isDense: true, border: OutlineInputBorder(), counterText: ""),
                                     validator: (v) => v!.length != 11 ? '11 Haneli Olmalı' : null,
                                   ),
@@ -209,6 +236,7 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                                   TextFormField(
                                     controller: phoneControllers[index],
                                     keyboardType: TextInputType.phone,
+                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                                     decoration: const InputDecoration(labelText: 'Telefon No', isDense: true, border: OutlineInputBorder()),
                                     validator: (v) => v!.isEmpty ? 'Zorunlu' : null,
                                   ),
@@ -433,18 +461,23 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                     child: DropdownButtonFormField<String>(
                       initialValue: _selectedOrigin,
                       decoration: const InputDecoration(labelText: 'Nereden', border: OutlineInputBorder()),
-                      // Liste elemanlarını basitçe Text'e çeviriyoruz
-                      items: _airports.map((ap) => DropdownMenuItem(value: ap, child: Text(ap))).toList(),
-                      onChanged: (val) => setState(() => _selectedOrigin = val!),
+                      items: _origins.map((ap) => DropdownMenuItem(value: ap, child: Text(ap))).toList(),
+                      onChanged: (val) {
+                        setState(() {
+                          _selectedOrigin = val!;
+                          // Kalkış değişince Varış hedeflerini güncelle
+                          _destinations = _availableRoutes[_selectedOrigin] ?? [];
+                          _selectedDestination = _destinations.isNotEmpty ? _destinations.first : '';
+                        });
+                      },
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      initialValue: _selectedDestination,
+                      initialValue: _selectedDestination.isEmpty ? null : _selectedDestination,
                       decoration: const InputDecoration(labelText: 'Nereye', border: OutlineInputBorder()),
-                      // Liste elemanlarını basitçe Text'e çeviriyoruz
-                      items: _airports.map((ap) => DropdownMenuItem(value: ap, child: Text(ap))).toList(),
+                      items: _destinations.map((ap) => DropdownMenuItem(value: ap, child: Text(ap))).toList(),
                       onChanged: (val) => setState(() => _selectedDestination = val!),
                     ),
                   ),
@@ -550,13 +583,33 @@ class _SearchFlightScreenState extends State<SearchFlightScreen> {
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           child: ListTile(
                             leading: const Icon(Icons.flight, color: Colors.blue, size: 40),
-                            title: Text('${flight.flightNumber} | ${flight.origin} ➔ ${flight.destination}'),
+                            title: FittedBox(
+                              alignment: Alignment.centerLeft,
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                '${flight.flightNumber} | ${flight.origin} ➔ ${flight.destination}',
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const SizedBox(height: 4),
-                                Text('${flight.date.hour.toString().padLeft(2, '0')}:${flight.date.minute.toString().padLeft(2, '0')} Kalkış ➔ ${flight.arrivalTime.hour.toString().padLeft(2, '0')}:${flight.arrivalTime.minute.toString().padLeft(2, '0')} Varış', 
-                                     style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
+                                    children: [
+                                      Text('${flight.date.hour.toString().padLeft(2, '0')}:${flight.date.minute.toString().padLeft(2, '0')} Kalkış', 
+                                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                                      const Padding(
+                                        padding: EdgeInsets.symmetric(horizontal: 6.0),
+                                        child: Icon(Icons.arrow_forward, size: 16, color: Colors.black87),
+                                      ),
+                                      Text('${flight.arrivalTime.hour.toString().padLeft(2, '0')}:${flight.arrivalTime.minute.toString().padLeft(2, '0')} Varış', 
+                                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                                    ],
+                                  ),
+                                ),
                                 Text('Terminal: ${flight.terminal ?? "Belirtilmedi"}', style: const TextStyle(fontSize: 13, color: Colors.blueGrey)),
                                 const SizedBox(height: 4),
                                 seatInfo, 

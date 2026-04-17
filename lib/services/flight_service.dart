@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/flight_model.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class FlightService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -48,6 +49,8 @@ class FlightService {
         terminal: flight.terminal,
       );
 
+      
+
       await docRef.set(flightWithId.toMap());
       return "success";
     } catch (e) {
@@ -73,7 +76,7 @@ class FlightService {
     required String destination,
     required DateTime date,
     required int passengerCount,
-    bool isFlexible = false, // YENİ: Esnek tarih seçeneği
+    bool isFlexible = false, // Esnek tarih seçeneği
   }) async {
     QuerySnapshot snapshot = await _firestore
         .collection('flights')
@@ -89,112 +92,197 @@ class FlightService {
       // Eğer esnek seçildiyse tarih kontrolünü atla, sadece gelecekteki uçuşları göster
       bool dateMatch = isFlexible 
           ? flight.date.isAfter(DateTime.now())
-          : (flight.date.year == date.year && flight.date.month == date.month && flight.date.day == date.day);
+          : (flight.date.year == date.year && 
+             flight.date.month == date.month && 
+             flight.date.day == date.day && 
+             flight.date.isAfter(DateTime.now()));
       
       bool hasEnoughSeats = flight.availableSeats >= passengerCount;
-      return dateMatch && hasEnoughSeats && flight.status == 'scheduled';
+      bool statusMatch = flight.status == 'scheduled' || flight.status == 'Rötarlı';
+      return dateMatch && hasEnoughSeats && statusMatch;
     }).toList();
+  }
+
+  // --- DİNAMİK ROTA HARİTASI ÇEKME ---
+  Future<Map<String, List<String>>> getAvailableRoutes() async {
+    try {
+      QuerySnapshot snapshot = await _firestore.collection('flights').get();
+      Map<String, Set<String>> routesMap = {}; // Kalkış -> [Varışlar]
+
+      for (var doc in snapshot.docs) {
+        var data = doc.data() as Map<String, dynamic>;
+        String origin = data['origin'] ?? '';
+        String dest = data['destination'] ?? '';
+
+        if (origin.isNotEmpty && dest.isNotEmpty) {
+          if (!routesMap.containsKey(origin)) {
+            routesMap[origin] = {};
+          }
+          routesMap[origin]!.add(dest);
+        }
+      }
+
+      Map<String, List<String>> finalRoutes = {};
+      routesMap.forEach((key, value) {
+        List<String> dests = value.toList();
+        dests.sort();
+        finalRoutes[key] = dests;
+      });
+
+      return finalRoutes;
+    } catch (e) {
+      return {};
+    }
   }
 
   // --- FAZ 2: ADMİN RÖTAR VE İPTAL İŞLEMLERİ ---
 
-  // 1. Uçuşu Erteleme (Transaction yerine daha güvenli olan Batch'e geçtik)
+  // --- ADMİN: UÇUŞA RÖTAR EKLEME ---
   Future<String> delayFlight(String flightId, Duration delay) async {
     try {
-      DocumentReference flightRef = _firestore.collection('flights').doc(flightId);
-      DocumentSnapshot flightSnap = await flightRef.get();
-      
-      if (!flightSnap.exists) return "Uçuş bulunamadı.";
-
-      // Mevcut verileri çekiyoruz
-      DateTime oldDate = (flightSnap['date'] as Timestamp).toDate();
-      // arrivalTime null ise bugünü al (hata almamak için koruma)
-      DateTime oldArrival = (flightSnap.data() as Map).containsKey('arrivalTime') 
-          ? (flightSnap['arrivalTime'] as Timestamp).toDate() 
-          : oldDate.add(const Duration(hours: 2));
-
-      String flightNo = flightSnap['flightNumber'] ?? "Bilinmiyor";
-
-      // Uçuşun yolcularını bul
-      QuerySnapshot tickets = await _firestore.collection('tickets')
-          .where('flightId', isEqualTo: flightId)
-          .where('status', whereIn: ['booked', 'checked_in']).get();
-
       WriteBatch batch = _firestore.batch();
 
-      // Uçuşu güncelle
+      // 1. Uçuşu bul
+      DocumentReference flightRef = _firestore.collection('flights').doc(flightId);
+      DocumentSnapshot flightDoc = await flightRef.get();
+
+      if (!flightDoc.exists) return "Uçuş bulunamadı.";
+
+      DateTime oldDate = (flightDoc['date'] as Timestamp).toDate();
+      DateTime oldArrival = (flightDoc['arrivalTime'] as Timestamp).toDate();
+
+      DateTime newDate = oldDate.add(delay);
+      DateTime newArrival = oldArrival.add(delay);
+
+      // Uçuşun saatini güncelle
       batch.update(flightRef, {
-        'status': 'delayed',
-        'date': Timestamp.fromDate(oldDate.add(delay)),
-        'arrivalTime': Timestamp.fromDate(oldArrival.add(delay)),
+        'date': newDate,
+        'arrivalTime': newArrival,
+        'status': 'Rötarlı', // İsteğe bağlı, durumu Rötarlı yapabilirsin
       });
 
-      // Her yolcuya BİLDİRİM gönder
-      for (var doc in tickets.docs) {
+      // 2. Bu uçuşa ait tüm biletleri bul ve saatlerini güncelle
+      QuerySnapshot ticketsSnapshot = await _firestore.collection('tickets').where('flightId', isEqualTo: flightId).get();
+
+      // Aynı kişiye 5 bilet aldıysa 5 bildirim gitmesin diye benzersiz kullanıcı ID'lerini topluyoruz
+      Set<String> affectedUserIds = {};
+
+      for (var doc in ticketsSnapshot.docs) {
+        batch.update(doc.reference, {
+          'date': newDate,
+          'arrivalTime': newArrival,
+        });
+        affectedUserIds.add(doc['userId']);
+      }
+
+      // 3. Kullanıcılara arka planda "Zil" bildirimi oluştur
+      for (String uId in affectedUserIds) {
         DocumentReference notifRef = _firestore.collection('notifications').doc();
         batch.set(notifRef, {
-          'userId': doc['userId'],
-          'title': '✈️ Uçuş Rötarı: $flightNo',
-          'message': 'Uçuşunuz ${delay.inHours} saat ertelenmiştir. Yeni saat: ${oldDate.add(delay).hour}:${oldDate.add(delay).minute}',
-          'timestamp': FieldValue.serverTimestamp(),
+          'id': notifRef.id,
+          'userId': uId,
+          'title': 'Uçuşunuzda Rötar!',
+          'message': '${flightDoc['flightNumber']} sefer sayılı uçuşunuza ${delay.inHours} saat rötar eklenmiştir. Yeni kalkış saati: ${newDate.hour.toString().padLeft(2, '0')}:${newDate.minute.toString().padLeft(2, '0')}',
           'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
         });
       }
 
+      String adminId = FirebaseAuth.instance.currentUser?.uid ?? 'Bilinmeyen Admin';
+      DocumentReference logRef = _firestore.collection('logs').doc();
+      batch.set(logRef, {
+        'userId': adminId,
+        'action': '${flightDoc['flightNumber']} sefer sayılı uçuşa ${delay.inHours} saat rötar eklendi.',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+
+      // Tüm işlemleri tek seferde çalıştır
       await batch.commit();
       return "success";
     } catch (e) {
-      return "Rötar işlemi başarısız: $e";
+      return "Rötar eklenirken hata: $e";
     }
   }
 
-  // 2. Havayolu Tarafından Toplu İptal (İade ve Bildirim Entegre Edildi)
+  // --- ADMİN: UÇUŞ İPTALİ VE OTOMATİK İADE SİSTEMİ ---
   Future<String> cancelFlightByAdmin(String flightId) async {
     try {
-      DocumentReference flightRef = _firestore.collection('flights').doc(flightId);
-      DocumentSnapshot flightSnap = await flightRef.get();
-      
-      if (!flightSnap.exists) return "Uçuş bulunamadı.";
-      
-      double flightPrice = (flightSnap.data() as Map<String, dynamic>)['price'] ?? 0.0;
-      String flightNo = flightSnap['flightNumber'] ?? "";
-
-      QuerySnapshot ticketsSnap = await _firestore.collection('tickets')
-          .where('flightId', isEqualTo: flightId)
-          .where('status', isNotEqualTo: 'cancelled').get();
-
       WriteBatch batch = _firestore.batch();
 
-      // 1. Uçuşu iptal et
-      batch.update(flightRef, {'status': 'cancelled'});
+      // 1. Uçuşun statüsünü iptal et
+      DocumentReference flightRef = _firestore.collection('flights').doc(flightId);
+      DocumentSnapshot flightDoc = await flightRef.get();
 
-      for (var doc in ticketsSnap.docs) {
-        String userId = doc['userId'];
-        String seatClass = doc['seatClass'] ?? 'economy';
-        double refund = seatClass == 'business' ? flightPrice * 2.5 : flightPrice;
+      if (!flightDoc.exists) return "Uçuş bulunamadı.";
 
-        // 2. Bileti iptal et
-        batch.update(doc.reference, {'status': 'cancelled'});
+      batch.update(flightRef, {
+        'status': 'cancelled',
+      });
 
-        // 3. Para İadesi (Increment kullanarak bakiye hatasını önlüyoruz)
-        DocumentReference userRef = _firestore.collection('users').doc(userId);
-        batch.update(userRef, {'walletBalance': FieldValue.increment(refund)});
+      // 2. İlgili tüm biletleri bul
+      QuerySnapshot ticketsSnapshot = await _firestore.collection('tickets').where('flightId', isEqualTo: flightId).get();
 
-        // 4. Bildirim Gönder
+      // Kullanıcılara ne kadar iade yapılacağını hesaplayacağımız liste (KullanıcıID : Toplam İade)
+      Map<String, double> refundsByUser = {};
+
+      for (var doc in ticketsSnapshot.docs) {
+        // Bileti veritabanında İptal Edildi olarak işaretle
+        batch.update(doc.reference, {
+          'status': 'cancelled',
+        });
+
+        // Bilet fiyatını al
+        var data = doc.data() as Map<String, dynamic>;
+        double price = data['price'] != null ? double.tryParse(data['price'].toString()) ?? 0.0 : 0.0;
+        String uId = doc['userId'];
+
+        // Kişinin iade sepetine parayı ekle
+        if (refundsByUser.containsKey(uId)) {
+          refundsByUser[uId] = refundsByUser[uId]! + price;
+        } else {
+          refundsByUser[uId] = price;
+        }
+      }
+
+      // 3. Para iadelerini yap ve Bildirimleri gönder
+      for (String uId in refundsByUser.keys) {
+        double refundAmount = refundsByUser[uId]!;
+
+        // Kullanıcının cüzdanına parayı KESİN VE GÜVENLİ olarak ekle
+        DocumentReference userRef = _firestore.collection('users').doc(uId);
+        batch.update(userRef, {
+          'walletBalance': FieldValue.increment(refundAmount)
+        });
+
+        // Bildirim oluştur
         DocumentReference notifRef = _firestore.collection('notifications').doc();
         batch.set(notifRef, {
-          'userId': userId,
-          'title': '❌ Uçuş İptal Edildi: $flightNo',
-          'message': 'Uçuşunuz iptal olmuştur. $refund TL iadeniz cüzdanınıza yüklendi.',
-          'timestamp': FieldValue.serverTimestamp(),
+          'id': notifRef.id,
+          'userId': uId,
+          'title': '⚠️ Uçuş İptali ve İade',
+          'message': '${flightDoc['flightNumber']} sefer sayılı uçuşunuz iptal edilmiştir. Biletleriniz için toplam $refundAmount TL cüzdanınıza iade edildi.',
           'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
         });
       }
 
+
+      String adminId = FirebaseAuth.instance.currentUser?.uid ?? 'Bilinmeyen Admin';
+      DocumentReference logRef = _firestore.collection('logs').doc();
+      batch.set(logRef, {
+        'userId': adminId,
+        'action': '${flightDoc['flightNumber']} sefer sayılı uçuş iptal edildi ve bilet ücretleri iade edildi.',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+      
+      // Tüm işlemleri tek seferde ateşle!
       await batch.commit();
       return "success";
     } catch (e) {
-      return "İptal işlemi başarısız: $e";
+      return "İptal işleminde hata: $e";
     }
   }
+
+  
 }

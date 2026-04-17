@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/flight_model.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class DummyDataService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -115,6 +116,17 @@ class DummyDataService {
 
       if (operationCount > 0) {
         await batch.commit();
+      }
+
+      try {
+        String adminId = FirebaseAuth.instance.currentUser?.uid ?? 'Bilinmeyen Admin';
+        await _firestore.collection('logs').add({
+          'userId': adminId,
+          'action': 'Sisteme test verisi (Dummy Data) olarak çok sayıda uçuş ve yeni rotalar eklendi.',
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        // print yerine sadece sessizce hatayı yutabiliriz, test verisi akışını bozmasın
       }
 
       return "success";

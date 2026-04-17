@@ -9,7 +9,7 @@ class NotificationService {
     return _firestore
         .collection('notifications')
         .where('userId', isEqualTo: userId)
-        .orderBy('timestamp', descending: true)
+        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => NotificationModel.fromMap(doc.data(), doc.id))

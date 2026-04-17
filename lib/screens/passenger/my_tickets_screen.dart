@@ -219,52 +219,70 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ÜST KISIM: Uçuş No ve Durum Rozeti
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // 1. TAŞMA ÖNLEMİ: Uçuş numarası çok uzunsa kes
                           Expanded(child: Text(ticket.flightNumber, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey), overflow: TextOverflow.ellipsis)),
                           const SizedBox(width: 10),
                           _buildStatusBadge(ticket),
                         ],
                       ),
                       const SizedBox(height: 15),
+                      
+                      // ORTA KISIM: Kalkış -> İkon -> Varış (Hizalaması Düzeltildi)
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 2. TAŞMA ÖNLEMİ: Sol Tarafı Expanded içine aldık
+                          // SOL TARAF (Kalkış Bilgileri)
                           Expanded(
+                            flex: 2,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(ticket.origin, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                                Text('${ticket.date.hour.toString().padLeft(2, '0')}:${ticket.date.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 16, color: Colors.blue)),
+                                const SizedBox(height: 4),
+                                Text('${ticket.date.day.toString().padLeft(2, '0')}/${ticket.date.month.toString().padLeft(2, '0')}/${ticket.date.year}\n${ticket.date.hour.toString().padLeft(2, '0')}:${ticket.date.minute.toString().padLeft(2, '0')}', 
+                                  style: const TextStyle(fontSize: 14, color: Colors.blue, height: 1.3)),
                                 const SizedBox(height: 4),
                                 Text('Terminal: ${ticket.terminal}', style: const TextStyle(fontSize: 12, color: Colors.grey), overflow: TextOverflow.ellipsis),
                               ],
                             ),
                           ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8.0),
-                            child: Icon(Icons.flight_takeoff, color: Colors.blue, size: 30),
+                          
+                          // ORTA TARAF (Uçak İkonu)
+                          const Expanded(
+                            flex: 1,
+                            child: Center(
+                              child: Padding(
+                                padding: EdgeInsets.only(top: 8.0),
+                                child: Icon(Icons.flight_takeoff, color: Colors.blue, size: 30),
+                              ),
+                            ),
                           ),
-                          // 3. TAŞMA ÖNLEMİ: Sağ Tarafı Expanded içine aldık
+                          
+                          // SAĞ TARAF (Varış Bilgileri)
                           Expanded(
+                            flex: 2,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(ticket.destination, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                                Text('${ticket.arrivalTime.hour.toString().padLeft(2, '0')}:${ticket.arrivalTime.minute.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 16, color: Colors.blue)),
+                                const SizedBox(height: 4),
+                                Text('${ticket.arrivalTime.day.toString().padLeft(2, '0')}/${ticket.arrivalTime.month.toString().padLeft(2, '0')}/${ticket.arrivalTime.year}\n${ticket.arrivalTime.hour.toString().padLeft(2, '0')}:${ticket.arrivalTime.minute.toString().padLeft(2, '0')}', 
+                                  style: const TextStyle(fontSize: 14, color: Colors.blue, height: 1.3), textAlign: TextAlign.right),
                               ],
                             ),
                           ),
                         ],
                       ),
+                      
                       const Divider(height: 30),
+                      
+                      // ALT KISIM: Yolcu ve Fiyat Bilgileri
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // 4. TAŞMA ÖNLEMİ: İsim çok uzunsa sığdır
                           Expanded(child: Text('Yolcu: ${ticket.passengerName}', style: const TextStyle(color: Colors.black87), overflow: TextOverflow.ellipsis)),
                           Text('Sınıf: ${ticket.seatClass.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.bold)),
                         ],

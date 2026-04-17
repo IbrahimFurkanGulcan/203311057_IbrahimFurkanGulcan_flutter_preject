@@ -5,7 +5,7 @@ class NotificationModel {
   final String userId;
   final String title;
   final String message;
-  final DateTime timestamp;
+  final DateTime createdAt;
   final bool isRead;
 
   NotificationModel({
@@ -13,7 +13,7 @@ class NotificationModel {
     required this.userId,
     required this.title,
     required this.message,
-    required this.timestamp,
+    required this.createdAt,
     this.isRead = false,
   });
 
@@ -23,7 +23,7 @@ class NotificationModel {
       userId: map['userId'] ?? '',
       title: map['title'] ?? '',
       message: map['message'] ?? '',
-      timestamp: (map['timestamp'] as Timestamp).toDate(),
+      createdAt: map['createdAt'] != null ? (map['createdAt'] as Timestamp).toDate() : DateTime.now(),
       isRead: map['isRead'] ?? false,
     );
   }
@@ -33,7 +33,7 @@ class NotificationModel {
       'userId': userId,
       'title': title,
       'message': message,
-      'timestamp': Timestamp.fromDate(timestamp),
+      'createdAt': createdAt,
       'isRead': isRead,
     };
   }
