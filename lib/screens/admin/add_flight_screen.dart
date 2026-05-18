@@ -148,8 +148,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextFormField(
-                  controller: _flightNoController,
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
+                  controller: _flightNoController,                  
                   decoration: const InputDecoration(labelText: 'Uçuş No (Örn: TK-777)', border: OutlineInputBorder()),
                   validator: (value) => value!.isEmpty ? 'Boş bırakılamaz' : null,
                 ),
@@ -163,8 +162,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
-                  controller: _terminalController, // Kalkış terminali için mevcut controller
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
+                  controller: _terminalController, // Kalkış terminali için mevcut controller                  
                   decoration: const InputDecoration(
                     labelText: 'Kalkış Havalimanı ve Terminali (Örn: Trabzon Hvl. - İç Hatlar)', 
                     border: OutlineInputBorder()
@@ -182,8 +180,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
-                  controller: _destinationTerminalController,
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZğüşıöçĞÜŞİÖÇ\s]'))],
+                  controller: _destinationTerminalController,                  
                   decoration: const InputDecoration(
                     labelText: 'Varış Havalimanı ve Terminali (Örn: Heathrow - T2)', 
                     border: OutlineInputBorder()

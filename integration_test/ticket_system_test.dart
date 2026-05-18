@@ -12,8 +12,8 @@ void main() {
 
   // Test Verileri (Başkalarıyla karışmasın diye özel ID'ler kullanıyoruz)
   final String testUserId = 'TEST_USER_999';
-  final String flightA_Id = 'TEST_FLIGHT_A';
-  final String flightB_Id = 'TEST_FLIGHT_B';
+  final String flightaId = 'TEST_FLIGHT_A';
+  final String flightbId = 'TEST_FLIGHT_B';
 
   // Testler başlamadan ÖNCE 1 KERE ÇALIŞIR: Firebase'i başlatır
   setUpAll(() async {
@@ -30,7 +30,7 @@ void main() {
       'email': 'test@test.com',
     });
 
-    await firestore.collection('flights').doc(flightA_Id).set({
+    await firestore.collection('flights').doc(flightaId).set({
       'availableSeats': 100,
       'price': 1000.0,
       'status': 'scheduled',
@@ -40,7 +40,7 @@ void main() {
       'arrivalTime': Timestamp.fromDate(DateTime.now().add(const Duration(days: 1, hours: 2))),
     });
 
-    await firestore.collection('flights').doc(flightB_Id).set({
+    await firestore.collection('flights').doc(flightbId).set({
       'availableSeats': 100,
       'price': 1200.0,
       'status': 'scheduled',
@@ -56,8 +56,8 @@ void main() {
   // Her testten SONRA çalışır: Gerçek veritabanını kirletmemek için her şeyi SİLER!
   tearDown(() async {
     await firestore.collection('users').doc(testUserId).delete();
-    await firestore.collection('flights').doc(flightA_Id).delete();
-    await firestore.collection('flights').doc(flightB_Id).delete();
+    await firestore.collection('flights').doc(flightaId).delete();
+    await firestore.collection('flights').doc(flightbId).delete();
     
     // Kesilen test biletlerini bul ve sil
     var tickets = await firestore.collection('tickets').where('userId', isEqualTo: testUserId).get();
@@ -71,8 +71,8 @@ void main() {
     test('Senaryo 1: Yetersiz bakiye durumunda bilet alımı reddedilmeli', () async {
       String result = await ticketService.buyTickets(
         userId: testUserId,
-        flightId: flightA_Id,
-        tickets: [_createMockTicket(testUserId, flightA_Id)],
+        flightId: flightaId,
+        tickets: [_createMockTicket(testUserId, flightaId)],
         totalPrice: 15000.0, 
       );
       expect(result, contains("yetersiz")); 
@@ -83,50 +83,50 @@ void main() {
     test('Senaryo 2: Başarılı bilet alımı cüzdandan düşmeli ve koltuğu azaltmalı', () async {
       String result = await ticketService.buyTickets(
         userId: testUserId,
-        flightId: flightA_Id,
-        tickets: [_createMockTicket(testUserId, flightA_Id)], 
+        flightId: flightaId,
+        tickets: [_createMockTicket(testUserId, flightaId)], 
         totalPrice: 1000.0,
       );
       expect(result, "success");
       var user = await firestore.collection('users').doc(testUserId).get();
       expect(user['walletBalance'], 9000.0); 
-      var flight = await firestore.collection('flights').doc(flightA_Id).get();
+      var flight = await firestore.collection('flights').doc(flightaId).get();
       expect(flight['availableSeats'], 99); 
     });
 
     test('Senaryo 3: Check-in kapasiteyi DÜŞÜRMEZ, sadece koltuk no atar', () async {
       await ticketService.buyTickets(
-        userId: testUserId, flightId: flightA_Id, totalPrice: 1000.0,
-        tickets: [_createMockTicket(testUserId, flightA_Id)], 
+        userId: testUserId, flightId: flightaId, totalPrice: 1000.0,
+        tickets: [_createMockTicket(testUserId, flightaId)], 
       );
       var ticketDocs = await firestore.collection('tickets').where('userId', isEqualTo: testUserId).get();
       String ticketId = ticketDocs.docs.first.id;
 
       String result = await ticketService.performCheckIn(
-        ticketId: ticketId, seatNumber: '14C', flightId: flightA_Id
+        ticketId: ticketId, seatNumber: '14C', flightId: flightaId
       );
       expect(result, "success");
       var updatedTicket = await firestore.collection('tickets').doc(ticketId).get();
       expect(updatedTicket['status'], 'checked_in');
       expect(updatedTicket['seatNumber'], '14C');
-      var flight = await firestore.collection('flights').doc(flightA_Id).get();
+      var flight = await firestore.collection('flights').doc(flightaId).get();
       expect(flight['availableSeats'], 99); 
     });
 
     test('Senaryo 4: İptal edilen bilet parayı iade eder ve koltuğu uçağa geri verir', () async {
       await ticketService.buyTickets(
-        userId: testUserId, flightId: flightA_Id, totalPrice: 1000.0,
-        tickets: [_createMockTicket(testUserId, flightA_Id)], 
+        userId: testUserId, flightId: flightaId, totalPrice: 1000.0,
+        tickets: [_createMockTicket(testUserId, flightaId)], 
       );
       var ticketDocs = await firestore.collection('tickets').where('userId', isEqualTo: testUserId).get();
       String ticketId = ticketDocs.docs.first.id;
 
       await ticketService.cancelTicket(
-        ticketId: ticketId, flightId: flightA_Id, userId: testUserId, seatClass: 'economy'
+        ticketId: ticketId, flightId: flightaId, userId: testUserId, seatClass: 'economy'
       );
       var user = await firestore.collection('users').doc(testUserId).get();
       expect(user['walletBalance'], 10000.0);
-      var flight = await firestore.collection('flights').doc(flightA_Id).get();
+      var flight = await firestore.collection('flights').doc(flightaId).get();
       expect(flight['availableSeats'], 100);
       var cancelledTicket = await firestore.collection('tickets').doc(ticketId).get();
       expect(cancelledTicket['status'], 'cancelled');
@@ -134,13 +134,13 @@ void main() {
 
     test('Senaryo 5: Uçuş Değiştirildiğinde eski koltuk iade edilir, yenisi düşer, fiyat farkı alınır', () async {
       await ticketService.buyTickets(
-        userId: testUserId, flightId: flightA_Id, totalPrice: 1000.0,
-        tickets: [_createMockTicket(testUserId, flightA_Id)], 
+        userId: testUserId, flightId: flightaId, totalPrice: 1000.0,
+        tickets: [_createMockTicket(testUserId, flightaId)], 
       );
       var ticketDocs = await firestore.collection('tickets').where('userId', isEqualTo: testUserId).get();
       var oldTicket = TicketModel.fromMap(ticketDocs.docs.first.data(), ticketDocs.docs.first.id);
 
-      var newFlightDoc = await firestore.collection('flights').doc(flightB_Id).get();
+      var newFlightDoc = await firestore.collection('flights').doc(flightbId).get();
       var newFlight = FlightModel.fromMap(newFlightDoc.data()!, newFlightDoc.id);
 
       String result = await ticketService.changeTicket(
@@ -151,10 +151,10 @@ void main() {
       var user = await firestore.collection('users').doc(testUserId).get();
       expect(user['walletBalance'], 8800.0); // 10.000 - 1000 - 200
 
-      var flightA = await firestore.collection('flights').doc(flightA_Id).get();
+      var flightA = await firestore.collection('flights').doc(flightaId).get();
       expect(flightA['availableSeats'], 100); // Eski uçuşa koltuk iade edildi
 
-      var flightB = await firestore.collection('flights').doc(flightB_Id).get();
+      var flightB = await firestore.collection('flights').doc(flightbId).get();
       expect(flightB['availableSeats'], 99); // Yeni uçuştan koltuk alındı
     });
   });
